@@ -4,6 +4,7 @@ import { MainLayout } from './layouts/MainLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { PlannerPage } from './pages/PlannerPage';
+import { ImportPage } from './pages/ImportPage';
 import './App.css';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
             <Route index element={<DashboardPage />} />
             <Route path="history" element={<HistoryPage />} />
             <Route path="planner" element={<PlannerPage />} />
+            <Route path="import" element={<ImportPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
