@@ -132,6 +132,7 @@ export function DashboardPage() {
                             <option value="Didi">Didi</option>
                             <option value="Cabify">Cabify</option>
                             <option value="Indriver">Indriver</option>
+                            <option value="Otros">Otros</option>
                         </select>
                     </div>
 
