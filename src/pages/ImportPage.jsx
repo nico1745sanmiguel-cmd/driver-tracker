@@ -10,7 +10,7 @@ export function ImportPage() {
     const [log, setLog] = useState([]);
     const navigate = useNavigate();
 
-    // Helper to parse CSV line respecting quotes
+    // Helper to parse CSV line respecting quotes and stripping them
     const parseCSVLine = (line) => {
         const result = [];
         let current = '';
@@ -41,7 +41,7 @@ export function ImportPage() {
         // Remove all dots (thousands)
         const noDots = clean.replace(/\./g, '');
         // Replace comma with dot (decimal)
-        const standard = noDots.replace(',', '.');
+        const standard = noDots.replace(/,/g, '.');
 
         const num = parseFloat(standard);
         return isNaN(num) ? 0 : num;
@@ -49,19 +49,23 @@ export function ImportPage() {
 
     const parseHours = (val) => {
         if (!val) return 0;
-        const clean = val.toString().replace(',', '.').replace(/[^0-9.]/g, '');
+        // Replace all commas with dots, then remove non-numeric/dots
+        const clean = val.toString().replace(/,/g, '.').replace(/[^0-9.]/g, '');
         const num = parseFloat(clean);
         return isNaN(num) ? 0 : num;
     };
 
     const parseDate = (val) => {
         if (!val) return null;
+        // Strip quotes if present
+        const cleanVal = val.replace(/['"]/g, '').trim();
+
         let parts;
         // Handle "YYYY-MM-DD" or "DD/MM/YYYY" or "D/M/YYYY"
-        if (val.includes('-')) {
-            return val.trim();
+        if (cleanVal.includes('-')) {
+            return cleanVal;
         } else {
-            parts = val.trim().split('/');
+            parts = cleanVal.split('/');
             if (parts.length === 3) {
                 const day = parts[0].padStart(2, '0');
                 const month = parts[1].padStart(2, '0');
@@ -119,19 +123,18 @@ export function ImportPage() {
             const other = parseCurrency(parts[3] || '0');
             const totalHours = parseHours(parts[4] || '0');
 
-            const platforms = [
+            let platforms = [
                 { name: 'Uber', amount: uber },
                 { name: 'Didi', amount: didi },
                 { name: 'Otros', amount: other }
             ].filter(p => p.amount > 0); // Only save platforms with money > 0
 
-            // If no platform made money, skip (or save 0? Requirement said copy rows including $0)
-            // But if all are $0, what platform do we save? 
-            // If totalHours > 0 but earnings 0, it's an unpaid entry? 
-            // Let's iterate. if platforms is empty but hours > 0, maybe save as 'Otros'?
-            // For now follow previous logic: only save if earnings > 0.
+            // CASE: No earnings but hours worked (e.g. bad day or just tracking time)
+            if (platforms.length === 0 && totalHours > 0) {
+                platforms.push({ name: 'Otros', amount: 0 }); // Assign to Others by default
+            }
 
-            if (platforms.length === 0) continue;
+            if (platforms.length === 0) continue; // Skip completely empty rows (0 money, 0 hours)
 
             // Find max earner to assign hours
             let maxEarner = platforms[0];
