@@ -25,6 +25,9 @@ export function MainLayout() {
                 <Link to="/planner" className={`nav-item ${isActive('/planner')}`}>
                     ⚙️ Planificación
                 </Link>
+                <Link to="/import" className={`nav-item ${isActive('/import')}`}>
+                    📥 Importar
+                </Link>
             </nav>
 
             <main className="content-wrapper">
