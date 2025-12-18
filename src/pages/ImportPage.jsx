@@ -11,52 +11,60 @@ export function ImportPage() {
 
     const parseCurrency = (val) => {
         if (!val) return 0;
-        // Remove $, dots/commas if used as thousand separators, keep numbers
-        // Assuming format $1.000 or 1000. 
-        // Risky part: logic if ',' is decimal. In simple currency int usually no decimals or ignored.
-        // Simple approach: strip everything non-numeric.
-        const num = parseFloat(val.toString().replace(/[^0-9]/g, ''));
+        // Clean: Remove anything that isn't a number, comma, dot, or minus
+        // Also remove 'new line' or 'tab' ghosts just in case
+        const clean = val.toString().trim().replace(/[^0-9,.-]/g, '');
+
+        // Handle common formats:
+        // 1.000,00 (European/Latam) -> Remove dots, replace comma with dot.
+        // 1,000.00 (US) -> Remove commas.
+        // Heuristic: If there are dots and the last separator is a comma, assume dot is thousand.
+        // Given user context (latam likely), we assume dot = thousand, comma = decimal.
+
+        const numStr = clean.replace(/\./g, '').replace(',', '.');
+        const num = parseFloat(numStr);
+        return isNaN(num) ? 0 : num;
+    };
+
+    const parseHours = (val) => {
+        if (!val) return 0;
+        const clean = val.toString().trim().replace(',', '.').replace(/[^0-9.]/g, '');
+        const num = parseFloat(clean);
         return isNaN(num) ? 0 : num;
     };
 
     const parseDate = (val) => {
-        // Expecting dd/mm/yyyy from Excel/Sheets copy
         if (!val) return null;
-        const parts = val.split('/');
+        const parts = val.trim().split('/');
         if (parts.length === 3) {
-            // Excel often copies as d/m/yyyy. Pad with 0.
             const day = parts[0].padStart(2, '0');
             const month = parts[1].padStart(2, '0');
             const year = parts[2];
             return `${year}-${month}-${day}`;
         }
-        // Access might copy as yyyy-mm-dd check
         if (val.includes('-')) return val;
         return null;
     };
 
     const handleImport = async () => {
-        if (!window.confirm('¿Confirmas que los datos copiados siguen el orden: Fecha | Uber | Didi | Otros?')) return;
+        if (!window.confirm('¿Confirmas que los datos copiados siguen el orden: Fecha | Uber | Didi | Otros | Horas?')) return;
 
         setStatus('processing');
         const lines = textData.trim().split('\n');
         const newLog = [];
         let successCount = 0;
 
-        // Batch configs
-        const COLUMN_MAP = ['date', 'Uber', 'Didi', 'Otros'];
-
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
 
-            // Skip headers if detected
-            if (line.toLowerCase().includes('fecha') || line.toLowerCase().includes('uber')) continue;
+            // Skip headers
+            if (line.toLowerCase().includes('fecha')) continue;
 
-            const parts = line.split('\t'); // Excel copies with Tabs
+            const parts = line.split('\t');
 
-            // Robustness: User might have hidden column B. If parts > 4, we might need warning or smart guess.
-            // Assuming strict copy from user request: A, C, D, E -> 4 columns text.
+            // Need at least date
+            if (parts.length < 1) continue;
 
             const dateStr = parts[0];
             const date = parseDate(dateStr);
@@ -65,28 +73,41 @@ export function ImportPage() {
                 continue;
             }
 
-            // Iterate platforms columns
-            // Col 1: Uber, Col 2: Didi, Col 3: Otros
-            for (let col = 1; col < 4; col++) {
-                if (col >= parts.length) break;
+            // Columns indices: 0=Date, 1=Uber, 2=Didi, 3=Other, 4=Hours
+            // Use safe access in case columns are missing (undefined becomes 0)
+            const uber = parseCurrency(parts[1] || '0');
+            const didi = parseCurrency(parts[2] || '0');
+            const other = parseCurrency(parts[3] || '0');
+            const totalHours = parseHours(parts[4] || '0');
 
-                const rawAmount = parts[col];
-                const earnings = parseCurrency(rawAmount);
-                const platform = COLUMN_MAP[col];
+            const platforms = [
+                { name: 'Uber', amount: uber },
+                { name: 'Didi', amount: didi },
+                { name: 'Otros', amount: other }
+            ].filter(p => p.amount > 0);
 
-                if (earnings > 0) {
-                    try {
-                        await actions.addShift({
-                            date,
-                            platform,
-                            hours: 0, // No hours data in history
-                            earnings
-                        });
-                        successCount++;
-                        // Don't log every single one to avoid spam, maybe just summary or errors
-                    } catch (e) {
-                        newLog.push(`❌ Error guardando ${date} ${platform}: ${e.message}`);
-                    }
+            if (platforms.length === 0) continue;
+
+            // Find max earner to assign hours
+            let maxEarner = platforms[0];
+            for (let p of platforms) {
+                if (p.amount > maxEarner.amount) maxEarner = p;
+            }
+
+            for (const p of platforms) {
+                try {
+                    // Only assign hours if it's the max earner
+                    const shiftHours = (p.name === maxEarner.name) ? totalHours : 0;
+
+                    await actions.addShift({
+                        date,
+                        platform: p.name,
+                        hours: shiftHours,
+                        earnings: p.amount
+                    });
+                    successCount++;
+                } catch (e) {
+                    newLog.push(`❌ Error guardando ${date} ${p.name}: ${e.message}`);
                 }
             }
         }
@@ -101,13 +122,13 @@ export function ImportPage() {
             <div className="card">
                 <h2>📥 Importación Histórica desde Excel</h2>
                 <p className="text-secondary" style={{ marginBottom: '1rem' }}>
-                    Para que funcione, copia tus columnas de Excel <strong>EXACTAMENTE</strong> en este orden:
+                    Copia tus celdas de Excel <strong>EXACTAMENTE</strong> en este orden:
                 </p>
                 <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', borderLeft: '4px solid #3b82f6' }}>
-                    <strong>Fecha | Uber | Didi | Otros</strong>
+                    <strong>Fecha | Uber | Didi | Otros | Horas</strong>
                 </div>
                 <p className="text-muted" style={{ fontSize: '0.85rem' }}>
-                    * Las horas se guardarán como 0 ya que no están en el registro histórico.<br />
+                    * Las horas del día se asignarán a la plataforma con mayor ganancia para evitar duplicarlas.<br />
                     * Copia y pega desde tu Google Sheets (incluyendo las filas con $0).
                 </p>
 
@@ -123,8 +144,8 @@ export function ImportPage() {
                         fontFamily: 'monospace',
                         whiteSpace: 'pre'
                     }}
-                    placeholder={`23/10/2024	$45.000	$0	$0
-24/10/2024	$20.000	$15.000	$5.000`}
+                    placeholder={`01/10/2024	45.000	0	0	5,5
+02/10/2024	20.000	15.000	0	6`}
                     value={textData}
                     onChange={(e) => setTextData(e.target.value)}
                 />
