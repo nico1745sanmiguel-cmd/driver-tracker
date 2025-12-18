@@ -10,17 +10,46 @@ export function ImportPage() {
     const [log, setLog] = useState([]);
     const navigate = useNavigate();
 
+    // Helper to parse CSV line respecting quotes
+    const parseCSVLine = (line) => {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if ((char === ',' || char === ';' || char === '\t') && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        result.push(current.trim());
+        return result;
+    };
+
     const parseCurrency = (val) => {
         if (!val) return 0;
-        const clean = val.toString().trim().replace(/[^0-9,.-]/g, '');
-        const numStr = clean.replace(/\./g, '').replace(',', '.');
-        const num = parseFloat(numStr);
+        // Clean non-numeric characters EXCEPT . , -
+        const clean = val.toString().replace(/[^0-9,.-]/g, '');
+
+        // Handle "55.762,00" format
+        // Remove all dots (thousands)
+        const noDots = clean.replace(/\./g, '');
+        // Replace comma with dot (decimal)
+        const standard = noDots.replace(',', '.');
+
+        const num = parseFloat(standard);
         return isNaN(num) ? 0 : num;
     };
 
     const parseHours = (val) => {
         if (!val) return 0;
-        const clean = val.toString().trim().replace(',', '.').replace(/[^0-9.]/g, '');
+        const clean = val.toString().replace(',', '.').replace(/[^0-9.]/g, '');
         const num = parseFloat(clean);
         return isNaN(num) ? 0 : num;
     };
@@ -28,7 +57,7 @@ export function ImportPage() {
     const parseDate = (val) => {
         if (!val) return null;
         let parts;
-        // Handle "YYYY-MM-DD" or "DD/MM/YYYY"
+        // Handle "YYYY-MM-DD" or "DD/MM/YYYY" or "D/M/YYYY"
         if (val.includes('-')) {
             return val.trim();
         } else {
@@ -40,7 +69,7 @@ export function ImportPage() {
                 return `${year}-${month}-${day}`;
             }
         }
-        return null;
+        return null; // Return null if invalid to skip bad lines
     };
 
     const handleFileUpload = (e) => {
@@ -55,31 +84,36 @@ export function ImportPage() {
     };
 
     const processData = async () => {
+        if (!textData) return;
+
         setStatus('processing');
-        const lines = textData.trim().split(/\r\n|\n/); // Handle Windows/Unix line endings
+        // Handle standard newlines
+        const lines = textData.trim().split(/\r\n|\n/);
         const newLog = [];
         let successCount = 0;
 
-        let shiftsToSave = [];
+        const shiftsToSave = [];
 
-        // 1. First Pass: Parse all lines into objects
+        // 1. First Pass: Parse all lines
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            if (line.toLowerCase().includes('fecha')) continue;
+            // Skip header if strictly matches known headers
+            if (line.toLowerCase().startsWith('fecha')) continue;
 
-            const separator = line.includes('\t') ? '\t' : (line.includes(';') ? ';' : ',');
-            const parts = line.split(separator);
+            // Use robust parser
+            const parts = parseCSVLine(line);
 
             if (parts.length < 1) continue;
 
             const dateStr = parts[0];
             const date = parseDate(dateStr);
-            if (!date) {
-                newLog.push(`⚠️ Línea ${i + 1}: Fecha inválida (${dateStr}) - Ignorada`);
-                continue;
-            }
 
+            // If date is invalid, it's garbage or header
+            if (!date) continue;
+
+            // Mapped based on screenshot: Date(0), Uber(1), Didi(2), Otros(3), Horas(4)
+            // Safety checks for undefined
             const uber = parseCurrency(parts[1] || '0');
             const didi = parseCurrency(parts[2] || '0');
             const other = parseCurrency(parts[3] || '0');
@@ -89,10 +123,17 @@ export function ImportPage() {
                 { name: 'Uber', amount: uber },
                 { name: 'Didi', amount: didi },
                 { name: 'Otros', amount: other }
-            ].filter(p => p.amount > 0);
+            ].filter(p => p.amount > 0); // Only save platforms with money > 0
+
+            // If no platform made money, skip (or save 0? Requirement said copy rows including $0)
+            // But if all are $0, what platform do we save? 
+            // If totalHours > 0 but earnings 0, it's an unpaid entry? 
+            // Let's iterate. if platforms is empty but hours > 0, maybe save as 'Otros'?
+            // For now follow previous logic: only save if earnings > 0.
 
             if (platforms.length === 0) continue;
 
+            // Find max earner to assign hours
             let maxEarner = platforms[0];
             for (let p of platforms) {
                 if (p.amount > maxEarner.amount) maxEarner = p;
@@ -105,17 +146,21 @@ export function ImportPage() {
                     platform: p.name,
                     hours: shiftHours,
                     earnings: p.amount,
-                    line: i + 1
+                    lineIndex: i + 1
                 });
             }
         }
 
         setProgress({ current: 0, total: shiftsToSave.length });
 
-        // 2. Second Pass: Batch Upload (Parallel)
-        const BATCH_SIZE = 10; // 10 parallel requests at a time
+        // 2. Second Pass: Batch Upload
+        // Lower batch size to 5 to avoid potential strict rate limits or request size issues
+        const BATCH_SIZE = 5;
+
         for (let i = 0; i < shiftsToSave.length; i += BATCH_SIZE) {
             const batch = shiftsToSave.slice(i, i + BATCH_SIZE);
+
+            // Create promises
             const promises = batch.map(async (shift) => {
                 try {
                     await actions.addShift({
@@ -124,82 +169,107 @@ export function ImportPage() {
                         hours: shift.hours,
                         earnings: shift.earnings
                     });
-                    successCount++;
+                    return { success: true };
                 } catch (e) {
-                    newLog.push(`❌ Error guardando ${shift.date} ${shift.platform}: ${e.message}`);
+                    return { success: false, error: e.message, shift };
                 }
             });
 
-            await Promise.all(promises);
+            // Wait for this batch
+            const results = await Promise.all(promises);
+
+            // Process results
+            results.forEach(res => {
+                if (res.success) {
+                    successCount++;
+                } else {
+                    newLog.push(`❌ Linea ${res.shift.lineIndex} (${res.shift.platform}): ${res.error}`);
+                }
+            });
+
+            // Update Progress UI
             setProgress(prev => ({ ...prev, current: Math.min(prev.total, i + BATCH_SIZE) }));
         }
 
-        newLog.push(`✅ Proceso finalizado. ${successCount} registros creados.`);
+        if (newLog.length === 0) {
+            newLog.push(`✅ Éxito total. ${successCount} registros importados.`);
+        } else {
+            newLog.push(`⚠️ Terminado con errores. ${successCount} importados.`);
+        }
+
         setLog(newLog);
         setStatus('done');
-        setProgress({ current: 0, total: 0 });
     };
 
     return (
         <div className="fade-in" style={{ padding: '1rem' }}>
             <div className="card">
                 <h2>📥 Importación Histórica</h2>
-                <p className="text-secondary" style={{ marginBottom: '1rem' }}>
-                    Sube tu archivo CSV o pega el contenido manual.
-                </p>
-                <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', borderLeft: '4px solid #3b82f6' }}>
-                    <strong>Formato: Fecha | Uber | Didi | Otros | Horas</strong>
+                <div style={{ background: 'rgba(56, 189, 248, 0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', borderLeft: '4px solid #3b82f6' }}>
+                    <p style={{ margin: 0, fontSize: '0.9rem' }}><strong>Formato:</strong> Fecha, Uber, Didi, Otros, Horas</p>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Soporta CSV de Excel (con comillas y puntos de mil)</p>
                 </div>
 
                 {/* File Input */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
-                        Opción 1: Subir Archivo CSV / Excel (Guardar como CSV)
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <label className="btn-secondary" style={{ display: 'inline-block', cursor: 'pointer', width: '100%', textAlign: 'center' }}>
+                        📂 Seleccionar Archivo CSV
+                        <input
+                            type="file"
+                            accept=".csv,.txt"
+                            onChange={handleFileUpload}
+                            style={{ display: 'none' }}
+                        />
                     </label>
-                    <input
-                        type="file"
-                        accept=".csv,.txt"
-                        onChange={handleFileUpload}
-                        style={{ color: 'var(--text-primary)' }}
-                    />
                 </div>
 
-                <textarea
-                    style={{
-                        width: '100%',
-                        height: '150px',
-                        background: 'rgba(0,0,0,0.2)',
-                        border: '1px solid var(--glass-border)',
-                        color: 'white',
-                        padding: '1rem',
-                        borderRadius: 'var(--radius-md)',
-                        fontFamily: 'monospace',
-                        whiteSpace: 'pre'
-                    }}
-                    placeholder={`Opción 2: Pegar aquí...\n01/10/2024;45000;0;0;5.5`}
-                    value={textData}
-                    onChange={(e) => setTextData(e.target.value)}
-                />
+                <div style={{ position: 'relative' }}>
+                    <textarea
+                        style={{
+                            width: '100%',
+                            height: '150px',
+                            background: 'rgba(0,0,0,0.2)',
+                            border: '1px solid var(--glass-border)',
+                            color: 'white',
+                            padding: '1rem',
+                            borderRadius: 'var(--radius-md)',
+                            fontFamily: 'monospace',
+                            whiteSpace: 'pre',
+                            fontSize: '0.8rem'
+                        }}
+                        placeholder={`... o pega el contenido aquí ...\n1/10/2024,"0,00","0,00","0,00",0`}
+                        value={textData}
+                        onChange={(e) => setTextData(e.target.value)}
+                    />
+                    {textData && (
+                        <div style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '0.7rem', background: '#22c55e', padding: '2px 6px', borderRadius: '10px' }}>
+                            Datos cargados
+                        </div>
+                    )}
+                </div>
 
                 {/* Progress Bar */}
                 {status === 'processing' && (
-                    <div style={{ marginTop: '1rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                            <span style={{ fontSize: '0.9rem' }}>Procesando...</span>
-                            <span style={{ fontSize: '0.9rem' }}>{progress.current} / {progress.total}</span>
+                    <div style={{ marginTop: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.9rem', color: '#38bdf8' }}>Procesando... no cierres la página</span>
+                            <span style={{ fontSize: '0.9rem' }}>{Math.round((progress.current / (progress.total || 1)) * 100)}%</span>
                         </div>
                         <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
                             <div style={{
-                                width: `${(progress.current / progress.total) * 100}%`,
+                                width: `${(progress.current / (progress.total || 1)) * 100}%`,
                                 height: '100%',
                                 background: '#3b82f6',
                                 transition: 'width 0.3s ease'
                             }}></div>
                         </div>
+                        <div style={{ textAlign: 'center', fontSize: '0.8rem', marginTop: '0.5rem', color: 'var(--text-muted)' }}>
+                            {progress.current} / {progress.total} registros
+                        </div>
                     </div>
                 )}
 
-                <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
+                <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
                     <button
                         className="btn-primary"
                         onClick={processData}
@@ -209,25 +279,25 @@ export function ImportPage() {
                     </button>
 
                     <button
-                        className="btn-secondary"
-                        onClick={() => navigate('/')}
-                        style={{
-                            background: 'transparent',
-                            border: '1px solid var(--glass-border)',
-                            color: 'var(--text-primary)',
-                            padding: '0.75rem 1.5rem',
-                            borderRadius: 'var(--radius-md)',
-                            cursor: 'pointer'
-                        }}
+                        className="btn-delete"
+                        onClick={() => { setTextData(''); setLog([]); setStatus('idle'); }}
+                        disabled={status === 'processing'}
+                        style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444' }}
                     >
-                        Volver
+                        Limpiar
                     </button>
                 </div>
 
                 {log.length > 0 && (
-                    <div style={{ marginTop: '2rem', maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px' }}>
+                    <div style={{ marginTop: '2rem', maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
                         {log.map((entry, i) => (
-                            <div key={i} style={{ color: entry.includes('❌') ? '#f87171' : (entry.includes('⚠️') ? '#fbbf24' : '#4ade80'), marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                            <div key={i} style={{
+                                color: entry.includes('❌') ? '#f87171' : (entry.includes('⚠️') ? '#fbbf24' : '#4ade80'),
+                                marginBottom: '0.25rem',
+                                fontSize: '0.85rem',
+                                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                paddingBottom: '2px'
+                            }}>
                                 {entry}
                             </div>
                         ))}

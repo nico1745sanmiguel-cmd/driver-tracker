@@ -66,7 +66,7 @@ export function useDriverData() {
             });
         } catch (e) {
             console.error("Error adding shift: ", e);
-            alert("Error al guardar en la nube. Revisa tu conexión.");
+            throw e; // Propagate error to caller (ImportPage) so it can log it
         }
     };
 
