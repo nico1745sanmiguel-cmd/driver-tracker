@@ -157,24 +157,34 @@ export function ImportPage() {
         setProgress({ current: 0, total: shiftsToSave.length });
 
         // 2. Second Pass: Batch Upload
-        // Lower batch size to 5 to avoid potential strict rate limits or request size issues
-        const BATCH_SIZE = 5;
+        // Lower batch size to 3 to handle potential network hiccups
+        const BATCH_SIZE = 3;
 
         for (let i = 0; i < shiftsToSave.length; i += BATCH_SIZE) {
             const batch = shiftsToSave.slice(i, i + BATCH_SIZE);
 
-            // Create promises
+            // Create promises with Timeout Safety
             const promises = batch.map(async (shift) => {
                 try {
-                    await actions.addShift({
-                        date: shift.date,
-                        platform: shift.platform,
-                        hours: shift.hours,
-                        earnings: shift.earnings
-                    });
+                    // Create a race between the action and a 5s timeout
+                    const timeout = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Timeout de red')), 8000)
+                    );
+
+                    await Promise.race([
+                        actions.addShift({
+                            date: shift.date,
+                            platform: shift.platform,
+                            hours: shift.hours,
+                            earnings: shift.earnings
+                        }),
+                        timeout
+                    ]);
+
                     return { success: true };
                 } catch (e) {
-                    return { success: false, error: e.message, shift };
+                    console.error("Fallo al subir:", shift, e);
+                    return { success: false, error: e.message || 'Error desconocido', shift };
                 }
             });
 
@@ -197,7 +207,7 @@ export function ImportPage() {
         if (newLog.length === 0) {
             newLog.push(`✅ Éxito total. ${successCount} registros importados.`);
         } else {
-            newLog.push(`⚠️ Terminado con errores. ${successCount} importados.`);
+            newLog.push(`⚠️ Proceso terminado. ${successCount} importados, ${newLog.length} fallidos.`);
         }
 
         setLog(newLog);
