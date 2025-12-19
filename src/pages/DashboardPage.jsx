@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useDriver } from '../context/DriverContext';
 
-const APPS = ['Uber', 'Didi', 'Cabify', 'Indriver', 'Particular'];
+const APPS = ['Uber', 'Didi', 'Cabify', 'Particular'];
 
 export function DashboardPage() {
     const { stats, actions, monthlyConfig } = useDriver();
@@ -14,8 +14,7 @@ export function DashboardPage() {
 
     // Estado para Totales Globales
     const [globalStats, setGlobalStats] = useState({
-        hours: '',
-        minutes: '',
+        time: '', // Formato HH:MM
         km: ''
     });
 
@@ -27,13 +26,28 @@ export function DashboardPage() {
 
     const cleanCurrency = (val) => parseFloat(val.replace(/\./g, '')) || 0;
 
-    // Manejadores
+    // --- MANEJO DE TIEMPO ORGÁNICO ---
+    const handleTimeChange = (e) => {
+        let val = e.target.value.replace(/\D/g, ''); // Solo números
+        if (val.length > 4) val = val.slice(0, 4);   // Max 4 dígitos
+
+        // Auto-insertar dos puntos
+        if (val.length >= 3) {
+            val = val.slice(0, 2) + ':' + val.slice(2);
+        }
+
+        setGlobalStats(prev => ({ ...prev, time: val }));
+    };
+
+    // Manejadores Generales
     const handleEarningChange = (app, value) => {
         setEarnings(prev => ({ ...prev, [app]: formatCurrency(value) }));
     };
 
-    const handleGlobalChange = (field, value) => {
-        setGlobalStats(prev => ({ ...prev, [field]: value }));
+    const handleKmChange = (val) => {
+        // Solo permitir números
+        const clean = val.replace(/\D/g, '');
+        setGlobalStats(prev => ({ ...prev, km: clean }));
     };
 
     // Cálculos en tiempo real
@@ -41,11 +55,19 @@ export function DashboardPage() {
         let tMoney = 0;
         Object.values(earnings).forEach(val => tMoney += cleanCurrency(val));
 
-        const hrs = parseFloat(globalStats.hours) || 0;
-        const mins = parseFloat(globalStats.minutes) || 0;
-        const totalDuration = hrs + (mins / 60);
+        // Parsear hora HH:MM a decimal
+        const timeStr = globalStats.time.replace(':', '');
+        let hrs = 0;
+        let totalDuration = 0;
 
-        return { money: tMoney, duration: totalDuration };
+        if (timeStr.length >= 1) {
+            const h = parseInt(timeStr.slice(0, 2)) || 0;
+            const m = parseInt(timeStr.slice(2, 4)) || 0;
+            totalDuration = h + (m / 60);
+            hrs = h; // Solo visualización
+        }
+
+        return { money: tMoney, duration: totalDuration, displayHours: hrs };
     }, [earnings, globalStats]);
 
     const handleSubmit = async (e) => {
@@ -57,15 +79,13 @@ export function DashboardPage() {
 
         if (totalMoney === 0) return;
 
+        // Distribución Proporcional
         const promises = Object.entries(earnings).map(([platformName, val]) => {
             const money = cleanCurrency(val);
             if (money > 0) {
-                // Cálculo de Proporción (Regla de 3 simple basada en ganancia)
-                // Si ganaste el 50% de la plata en Uber, se te asigna el 50% del tiempo y km.
                 const ratio = money / totalMoney;
-
                 const allocatedHours = parseFloat((totalHours * ratio).toFixed(2));
-                const allocatedKm = Math.round(totalKm * ratio); // Km enteros mejor
+                const allocatedKm = Math.round(totalKm * ratio);
 
                 return actions.addShift({
                     date,
@@ -80,9 +100,9 @@ export function DashboardPage() {
 
         await Promise.all(promises);
 
-        // Resetear Formulario
+        // Reset
         setEarnings(APPS.reduce((acc, app) => ({ ...acc, [app]: '' }), {}));
-        setGlobalStats({ hours: '', minutes: '', km: '' });
+        setGlobalStats({ time: '', km: '' });
     };
 
     // Meta del día
@@ -109,113 +129,133 @@ export function DashboardPage() {
     const today = checkToday();
 
     return (
-        <div className="dashboard-page pb-32 fade-in">
-            {/* Banner Dinámico de Meta */}
-            <div className="card target-card mb-6" style={{ borderLeft: `8px solid ${today.type === 'high' ? 'var(--primary)' : '#ccc'}` }}>
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-gray-500 font-medium">Progreso Mensual</span>
-                    <strong className="text-[var(--primary)] text-lg">{stats.plan.currentProgress.toFixed(1)}%</strong>
-                </div>
-                <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${stats.plan.currentProgress}%` }}></div></div>
-                <div className="mt-4 text-center">
-                    <h4 className="text-sm text-gray-400 uppercase tracking-wider mb-1">Meta Sugerida ({date})</h4>
-                    {today.type === 'vacation' || today.type === 'rest' ? (
-                        <p className="text-green-600 font-bold text-xl">🏝️ ¡Día libre!</p>
-                    ) : (
-                        <h2 className="text-4xl font-extrabold text-[var(--text-main)]">${Math.round(today.target).toLocaleString()}</h2>
-                    )}
-                    {today.type === 'high' && <span className="inline-block bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-xs font-bold mt-2">🔥 DÍA DE ALTA DEMANDA</span>}
+        <div className="dashboard-page pb-32 fade-in max-w-lg mx-auto">
+            {/* 1. ENCUESTA DE DISPONIBILIDAD (META) */}
+            <div className={`card mb-4 transition-all duration-300 ${today.type === 'high' ? 'border-l-4 border-orange-500 bg-orange-50' : ''}`}>
+                <div className="flex justify-between items-end">
+                    <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Meta para Hoy</p>
+                        {today.type === 'vacation' || today.type === 'rest' ? (
+                            <h2 className="text-2xl font-bold text-green-600">🏝️ Libre</h2>
+                        ) : (
+                            <h2 className="text-3xl font-black text-[var(--text-main)]">${Math.round(today.target).toLocaleString()}</h2>
+                        )}
+                    </div>
+                    <div className="text-right">
+                        <p className="text-xs font-bold text-gray-400 uppercase">Mensual</p>
+                        <div className="flex items-center gap-2">
+                            <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                <div className="h-full bg-[var(--primary)] text-[var(--primary)]" style={{ width: `${Math.min(stats.plan.currentProgress, 100)}%` }}></div>
+                            </div>
+                            <span className="text-sm font-bold text-[var(--primary)]">{stats.plan.currentProgress.toFixed(0)}%</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            {/* Formulario Unificado */}
-            <div className="card form-card">
-                <div className="flex justify-between items-center mb-6 border-b pb-4">
-                    <h3 className="text-xl font-bold">Carga del Día</h3>
-                    <input
-                        type="date"
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="p-2 border rounded-lg font-bold text-gray-700 outline-none focus:border-[var(--primary)] text-sm"
-                    />
-                </div>
+            {/* 2. FORMULARIO PRINCIPAL */}
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
 
-                <form onSubmit={handleSubmit}>
-                    {/* Sección 1: Dinero por App */}
-                    <p className="text-xs text-gray-400 font-bold uppercase mb-2">1. Ganancias ($)</p>
-                    <div className="grid gap-3 mb-6">
-                        {APPS.map(app => (
-                            <div key={app} className="flex items-center gap-3">
-                                <div className="w-24 font-bold text-sm text-gray-700">{app}</div>
+                {/* GRUPO A: DATOS OPERATIVOS (Fecha, Tiempo, Km) */}
+                <div className="card p-0 overflow-hidden shadow-sm border border-gray-100">
+                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                        <span className="font-bold text-gray-600 text-sm">📅 Fecha de Trabajo</span>
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                            className="bg-transparent font-bold text-[var(--text-main)] outline-none text-right"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 divide-x divide-gray-100">
+                        {/* INPUT TIEMPO ORGÁNICO */}
+                        <div className="p-4 flex flex-col items-center">
+                            <label className="text-xs font-bold text-gray-400 uppercase mb-1">Tiempo (HH:MM)</label>
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                placeholder="00:00"
+                                className="text-center text-2xl font-black text-[var(--text-main)] w-full outline-none placeholder:text-gray-200"
+                                value={globalStats.time}
+                                onChange={handleTimeChange}
+                                maxLength={5}
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1">Escribe ej: 0630</p>
+                        </div>
+
+                        {/* INPUT KM */}
+                        <div className="p-4 flex flex-col items-center">
+                            <label className="text-xs font-bold text-gray-400 uppercase mb-1">Distancia</label>
+                            <div className="flex items-baseline gap-1">
                                 <input
                                     type="text"
-                                    placeholder="$0"
-                                    className="flex-1 p-3 border rounded-lg text-right font-mono text-lg tracking-tight focus:border-[var(--primary)] outline-none"
-                                    value={earnings[app]}
-                                    onChange={(e) => handleEarningChange(app, e.target.value)}
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder="0"
+                                    className="text-center text-2xl font-black text-[var(--text-main)] w-24 outline-none placeholder:text-gray-200"
+                                    value={globalStats.km}
+                                    onChange={(e) => handleKmChange(e.target.value)}
                                 />
+                                <span className="text-sm font-bold text-gray-400">km</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* GRUPO B: GANANCIAS POR APP */}
+                <div className="card shadow-sm border border-gray-100">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-3">Recaudación por App</p>
+                    <div className="flex flex-col gap-3">
+                        {APPS.map(app => (
+                            <div key={app} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100 group">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-8 rounded-full ${earnings[app] ? 'bg-[var(--primary)]' : 'bg-gray-200'}`}></div>
+                                    <span className="font-bold text-gray-700">{app}</span>
+                                </div>
+                                <div className="relative">
+                                    <span className={`absolute left-0 top-1/2 -translate-y-1/2 transition-all ${earnings[app] ? 'text-[var(--primary)] font-bold' : 'text-gray-300'}`}>$</span>
+                                    <input
+                                        type="tel" // Fuerza numérico en iOS/Android
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        placeholder="0"
+                                        className={`text-right w-32 p-2 bg-transparent outline-none font-mono text-lg font-bold transition-all ${earnings[app] ? 'text-[var(--text-main)]' : 'text-gray-400'}`}
+                                        value={earnings[app]}
+                                        onChange={(e) => handleEarningChange(app, e.target.value)}
+                                    />
+                                </div>
                             </div>
                         ))}
                     </div>
+                </div>
 
-                    {/* Sección 2: Operativa Global */}
-                    <p className="text-xs text-gray-400 font-bold uppercase mb-2">2. Datos Generales (Total del día)</p>
-                    <div className="grid grid-cols-2 gap-4 mb-8 bg-gray-50 p-4 rounded-xl border border-gray-100">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">TIEMPO CONECTADO</label>
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="number"
-                                    placeholder="Hs"
-                                    className="w-full p-3 border rounded-lg text-center font-bold text-lg outline-none focus:border-[var(--primary)]"
-                                    value={globalStats.hours}
-                                    onChange={(e) => handleGlobalChange('hours', e.target.value)}
-                                />
-                                <span className="text-xl font-bold text-gray-300">:</span>
-                                <input
-                                    type="number"
-                                    placeholder="Min"
-                                    className="w-full p-3 border rounded-lg text-center font-bold text-lg outline-none focus:border-[var(--primary)]"
-                                    value={globalStats.minutes}
-                                    onChange={(e) => handleGlobalChange('minutes', e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">KILÓMETROS</label>
-                            <div className="relative">
-                                <input
-                                    type="number"
-                                    placeholder="0"
-                                    className="w-full p-3 border rounded-lg text-center font-bold text-lg outline-none focus:border-[var(--primary)]"
-                                    value={globalStats.km}
-                                    onChange={(e) => handleGlobalChange('km', e.target.value)}
-                                />
-                                <span className="absolute right-3 top-4 text-xs font-bold text-gray-400">KM</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Barra de Totales */}
-                    <div className="bg-[var(--text-main)] text-white p-4 rounded-xl shadow-lg mb-4 flex justify-between items-center">
-                        <div>
-                            <p className="text-xs text-gray-400 uppercase">Total Recaudado</p>
-                            <p className="text-2xl font-black">${totals.money.toLocaleString()}</p>
-                        </div>
-                        <div className="text-right text-sm text-gray-400">
-                            <p>{stats.plan.currentProgress > 10 ? '¡Buen trabajo!' : 'Comenzando...'}</p>
-                        </div>
-                    </div>
-
+                {/* BOTÓN Y RESUMEN */}
+                <div className="sticky bottom-20 z-10">
                     <button
                         type="submit"
-                        className="btn-primary w-full py-4 text-lg font-bold shadow-xl hover:scale-[1.01] transition-transform"
                         disabled={totals.money === 0}
+                        className="w-full bg-[var(--text-main)] text-white p-4 rounded-xl shadow-xl flex justify-between items-center transition-transform active:scale-95 disabled:opacity-70 disabled:active:scale-100"
                     >
-                        GUARDAR DÍA
+                        <div className="text-left">
+                            <p className="text-xs text-gray-400 uppercase font-bold">Total Diario</p>
+                            <p className="text-2xl font-bold">${totals.money.toLocaleString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-lg">
+                            <span className="font-bold">GUARDAR</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                            </svg>
+                        </div>
                     </button>
-                </form>
-            </div>
+                    {totals.money > 0 && (
+                        <p className="text-center text-xs text-gray-400 mt-2 font-medium">
+                            Se guardarán {stats.plan.currentProgress > 0 ? 'tus registros' : 'tus primeros registros'} del día
+                        </p>
+                    )}
+                </div>
+            </form>
         </div>
     );
 }
