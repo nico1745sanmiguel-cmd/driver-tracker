@@ -26,17 +26,25 @@ export function DashboardPage() {
 
     const cleanCurrency = (val) => parseFloat(val.replace(/\./g, '')) || 0;
 
-    // --- MANEJO DE TIEMPO ORGÁNICO ---
+    // --- MANEJO DE TIEMPO INTELIGENTE ---
     const handleTimeChange = (e) => {
-        let val = e.target.value.replace(/\D/g, ''); // Solo números
-        if (val.length > 4) val = val.slice(0, 4);   // Max 4 dígitos
+        // Permitimos escribir libremente, el formateo visual lo hacemos dinámico
+        let val = e.target.value.replace(/\D/g, '');
 
-        // Auto-insertar dos puntos
-        if (val.length >= 3) {
-            val = val.slice(0, 2) + ':' + val.slice(2);
-        }
+        // Limitar longitud sensata (ej: 5 dígitos max 100:00)
+        if (val.length > 4) val = val.slice(0, 4);
 
         setGlobalStats(prev => ({ ...prev, time: val }));
+    };
+
+    // Helper para visualización del Input
+    const formatTimeDisplay = (raw) => {
+        if (!raw) return '';
+        if (raw.length < 3) return raw + 'm'; // 30 -> 30m
+        // 630 -> 6:30
+        const minutes = raw.slice(-2);
+        const hours = raw.slice(0, -2);
+        return `${hours}:${minutes}`;
     };
 
     // Manejadores Generales
@@ -55,16 +63,21 @@ export function DashboardPage() {
         let tMoney = 0;
         Object.values(earnings).forEach(val => tMoney += cleanCurrency(val));
 
-        // Parsear hora HH:MM a decimal
-        const timeStr = globalStats.time.replace(':', '');
+        // Parsear hora inteligente (últimos 2 dígitos = minutos)
+        const timeStr = globalStats.time;
         let hrs = 0;
         let totalDuration = 0;
 
-        if (timeStr.length >= 1) {
-            const h = parseInt(timeStr.slice(0, 2)) || 0;
-            const m = parseInt(timeStr.slice(2, 4)) || 0;
+        if (timeStr.length > 0) {
+            let h = 0, m = 0;
+            if (timeStr.length <= 2) {
+                m = parseInt(timeStr); // Solo minutos
+            } else {
+                m = parseInt(timeStr.slice(-2));
+                h = parseInt(timeStr.slice(0, -2));
+            }
             totalDuration = h + (m / 60);
-            hrs = h; // Solo visualización
+            hrs = h;
         }
 
         return { money: tMoney, duration: totalDuration, displayHours: hrs };
@@ -171,18 +184,24 @@ export function DashboardPage() {
                     <div className="grid grid-cols-2 divide-x divide-gray-100">
                         {/* INPUT TIEMPO ORGÁNICO */}
                         <div className="p-4 flex flex-col items-center">
-                            <label className="text-xs font-bold text-gray-400 uppercase mb-1">Tiempo (HH:MM)</label>
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                placeholder="00:00"
-                                className="text-center text-2xl font-black text-[var(--text-main)] w-full outline-none placeholder:text-gray-200"
-                                value={globalStats.time}
-                                onChange={handleTimeChange}
-                                maxLength={5}
-                            />
-                            <p className="text-[10px] text-gray-400 mt-1">Escribe ej: 0630</p>
+                            <label className="text-xs font-bold text-gray-400 uppercase mb-1">Tiempo</label>
+                            <div className="relative w-full">
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder="Hs:Min"
+                                    className="text-center text-3xl font-black text-[var(--text-main)] w-full outline-none placeholder:text-gray-200 tracking-widest"
+                                    value={globalStats.time}
+                                    onChange={handleTimeChange}
+                                    maxLength={4}
+                                />
+                                <div className="absolute top-full left-0 w-full text-center pointer-events-none">
+                                    <span className="text-xs font-bold text-[var(--primary)] bg-red-50 px-2 py-0.5 rounded">
+                                        {formatTimeDisplay(globalStats.time) || '0:00'}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
 
                         {/* INPUT KM */}
@@ -194,7 +213,7 @@ export function DashboardPage() {
                                     inputMode="numeric"
                                     pattern="[0-9]*"
                                     placeholder="0"
-                                    className="text-center text-2xl font-black text-[var(--text-main)] w-24 outline-none placeholder:text-gray-200"
+                                    className="text-center text-3xl font-black text-[var(--text-main)] w-24 outline-none placeholder:text-gray-200"
                                     value={globalStats.km}
                                     onChange={(e) => handleKmChange(e.target.value)}
                                 />
@@ -232,20 +251,20 @@ export function DashboardPage() {
                 </div>
 
                 {/* BOTÓN Y RESUMEN */}
-                <div className="sticky bottom-20 z-10">
+                <div className="sticky bottom-4 z-10 px-0">
                     <button
                         type="submit"
                         disabled={totals.money === 0}
-                        className="w-full bg-[var(--text-main)] text-white p-4 rounded-xl shadow-xl flex justify-between items-center transition-transform active:scale-95 disabled:opacity-70 disabled:active:scale-100"
+                        className="w-full bg-emerald-500 text-white p-4 rounded-2xl shadow-xl shadow-emerald-200 flex justify-between items-center transition-all active:scale-95 disabled:opacity-70 disabled:active:scale-100 disabled:shadow-none"
                     >
                         <div className="text-left">
-                            <p className="text-xs text-gray-400 uppercase font-bold">Total Diario</p>
-                            <p className="text-2xl font-bold">${totals.money.toLocaleString()}</p>
+                            <p className="text-xs text-emerald-100 uppercase font-bold">Total Diario</p>
+                            <p className="text-2xl font-black text-white">${totals.money.toLocaleString()}</p>
                         </div>
-                        <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-lg">
-                            <span className="font-bold">GUARDAR</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                        <div className="flex items-center gap-2 bg-white/20 px-5 py-3 rounded-xl backdrop-blur-sm">
+                            <span className="font-bold tracking-wide">GUARDAR</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                             </svg>
                         </div>
                     </button>
