@@ -189,7 +189,6 @@ export function DashboardPage() {
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    pattern="[0-9]*"
                                     placeholder="Hs:Min"
                                     className="text-center text-3xl font-black text-[var(--text-main)] w-full outline-none placeholder:text-gray-200 tracking-widest"
                                     value={globalStats.time}
@@ -211,7 +210,6 @@ export function DashboardPage() {
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    pattern="[0-9]*"
                                     placeholder="0"
                                     className="text-center text-3xl font-black text-[var(--text-main)] w-24 outline-none placeholder:text-gray-200"
                                     value={globalStats.km}
@@ -238,7 +236,6 @@ export function DashboardPage() {
                                     <input
                                         type="tel" // Fuerza numérico en iOS/Android
                                         inputMode="numeric"
-                                        pattern="[0-9]*"
                                         placeholder="0"
                                         className={`text-right w-32 p-2 bg-transparent outline-none font-mono text-lg font-bold transition-all ${earnings[app] ? 'text-[var(--text-main)]' : 'text-gray-400'}`}
                                         value={earnings[app]}
