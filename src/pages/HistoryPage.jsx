@@ -1,5 +1,3 @@
-import { useDriver } from '../context/DriverContext';
-
 import { useMemo } from 'react';
 import { useDriver } from '../context/DriverContext';
 
@@ -109,8 +107,8 @@ export function HistoryPage() {
                                         <div key={app.id} className="flex justify-between items-center bg-white p-2 rounded border border-gray-50">
                                             <div className="flex items-center gap-2">
                                                 <div className={`w-1.5 h-6 rounded-full ${app.name === 'Uber' ? 'bg-black' :
-                                                        app.name === 'Didi' ? 'bg-orange-500' :
-                                                            app.name === 'Cabify' ? 'bg-purple-600' : 'bg-gray-400'
+                                                    app.name === 'Didi' ? 'bg-orange-500' :
+                                                        app.name === 'Cabify' ? 'bg-purple-600' : 'bg-gray-400'
                                                     }`}></div>
                                                 <span className="text-sm font-semibold text-gray-600">{app.name}</span>
                                             </div>
