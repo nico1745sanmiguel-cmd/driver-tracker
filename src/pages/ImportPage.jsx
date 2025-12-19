@@ -1,182 +1,117 @@
 import { useState } from 'react';
 import { useDriver } from '../context/DriverContext';
-import { useNavigate } from 'react-router-dom';
 
 export function ImportPage() {
     const { actions } = useDriver();
-    const [textData, setTextData] = useState(''); // Lo dejamos vacío para que pegues tus datos
-    const [status, setStatus] = useState('idle');
+    const [status, setStatus] = useState({ loading: false, msg: '', type: '' });
     const [progress, setProgress] = useState({ current: 0, total: 0 });
-    const [log, setLog] = useState([]);
-    const navigate = useNavigate();
 
-    // Limpiador de números pro: maneja "55.762,00" y los convierte en 55762
-    const parseCurrency = (val) => {
-        if (!val || val === '0' || val === '0,00') return 0;
-        const clean = val.toString().replace(/[^0-9,.-]/g, '');
-        const noDots = clean.replace(/\./g, '');
-        const standard = noDots.replace(/,/g, '.');
-        const num = parseFloat(standard);
-        return isNaN(num) ? 0 : num;
-    };
+    const handleFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
 
-    const parseDate = (val) => {
-        if (!val) return null;
-        const cleanVal = val.replace(/['"]/g, '').trim();
-        if (cleanVal.includes('-')) return cleanVal;
-        const parts = cleanVal.split('/');
-        if (parts.length === 3) {
-            const day = parts[0].padStart(2, '0');
-            const month = parts[1].padStart(2, '0');
-            const year = parts[2];
-            return `${year}-${month}-${day}`;
-        }
-        return null;
-    };
+        setStatus({ loading: true, msg: 'Leyendo archivo...', type: 'info' });
 
-    const processData = async () => {
-        if (!textData) return;
-
-        setStatus('processing');
-        const lines = textData.trim().split(/\r\n|\n/);
-        const shiftsToSave = [];
-        const newLog = [];
-
-        lines.forEach((line, index) => {
-            const row = line.trim();
-            if (!row || row.toLowerCase().startsWith('fecha')) return;
-
-            // Separamos por tabulación o por 2 o más espacios seguidos
-            const parts = row.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p !== "");
-
-            if (parts.length < 2) return;
-
-            const date = parseDate(parts[0]);
-            if (!date) {
-                newLog.push(`❌ Línea ${index + 1}: Fecha inválida (${parts[0]})`);
-                return;
-            }
-
-            // --- LÓGICA INTELIGENTE DE COLUMNAS ---
-            // El último elemento siempre son las HORAS
-            const totalHours = parseFloat(parts[parts.length - 1].replace(',', '.')) || 0;
-
-            // Las columnas del medio son las PLATAFORMAS (Uber, Didi, Otros...)
-            const earningsRaw = parts.slice(1, parts.length - 1);
-
-            let platforms = [];
-            if (earningsRaw.length >= 1) platforms.push({ name: 'Uber', amount: parseCurrency(earningsRaw[0]) });
-            if (earningsRaw.length >= 2) platforms.push({ name: 'Didi', amount: parseCurrency(earningsRaw[1]) });
-            if (earningsRaw.length >= 3) platforms.push({ name: 'Otros', amount: parseCurrency(earningsRaw[2]) });
-
-            const activePlatforms = platforms.filter(p => p.amount > 0);
-
-            if (activePlatforms.length === 0 && totalHours > 0) {
-                // Si trabajó horas pero no ganó (día malo), lo asignamos a Otros
-                activePlatforms.push({ name: 'Otros', amount: 0 });
-            }
-
-            // Repartimos las horas: se las asignamos a la app donde más ganó
-            let maxAmount = -1;
-            let maxIndex = 0;
-            activePlatforms.forEach((p, i) => {
-                if (p.amount > maxAmount) {
-                    maxAmount = p.amount;
-                    maxIndex = i;
-                }
-            });
-
-            activePlatforms.forEach((p, i) => {
-                shiftsToSave.push({
-                    date,
-                    platform: p.name,
-                    earnings: p.amount,
-                    hours: i === maxIndex ? totalHours : 0, // Solo suma horas a la principal para no duplicar tiempo total
-                    lineRef: index + 1
-                });
-            });
-        });
-
-        setProgress({ current: 0, total: shiftsToSave.length });
-
-        // Subida a Firebase en bloques para no saturar la red
-        for (let i = 0; i < shiftsToSave.length; i++) {
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
             try {
-                await actions.addShift(shiftsToSave[i]);
-                setProgress(prev => ({ ...prev, current: i + 1 }));
-            } catch (e) {
-                newLog.push(`❌ Error en línea ${shiftsToSave[i].lineRef}: ${e.message}`);
-            }
-        }
+                // Convertimos el texto del archivo en un objeto real de JS
+                const data = JSON.parse(evt.target.result);
 
-        setLog(newLog.length ? newLog : [`✅ Éxito: ${shiftsToSave.length} registros procesados.`]);
-        setStatus('done');
+                if (!Array.isArray(data)) {
+                    throw new Error("El formato del archivo no es una lista de viajes.");
+                }
+
+                setProgress({ current: 0, total: data.length });
+                let successCount = 0;
+
+                // Subida secuencial a Firebase
+                for (let i = 0; i < data.length; i++) {
+                    const shift = data[i];
+
+                    // Validamos que el objeto tenga lo mínimo necesario
+                    if (shift.date && shift.platform) {
+                        await actions.addShift({
+                            date: shift.date,
+                            platform: shift.platform,
+                            hours: parseFloat(shift.hours) || 0,
+                            earnings: parseFloat(shift.earnings) || 0
+                        });
+                        successCount++;
+                    }
+                    setProgress(prev => ({ ...prev, current: i + 1 }));
+                }
+
+                setStatus({
+                    loading: false,
+                    msg: `¡Éxito! Se importaron ${successCount} registros correctamente.`,
+                    type: 'success'
+                });
+
+            } catch (err) {
+                console.error(err);
+                setStatus({
+                    loading: false,
+                    msg: 'Error: El archivo JSON es inválido o tiene errores.',
+                    type: 'error'
+                });
+            }
+        };
+
+        reader.readAsText(file);
     };
 
     return (
-        <div className="fade-in" style={{ padding: '1rem', paddingBottom: '100px' }}>
+        <div className="import-page fade-in" style={{ paddingBottom: '100px' }}>
             <div className="card">
-                <h2>📥 Importación de Datos</h2>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Copiá y pegá tus columnas desde Excel o Google Sheets.
+                <h2>📥 Importador Profesional (JSON)</h2>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                    Seleccioná el archivo <strong>.json</strong> con tu historial para sincronizarlo con Firebase.
                 </p>
 
-                <textarea
-                    style={{
-                        width: '100%',
-                        height: '250px',
-                        background: 'white',
-                        color: 'black',
-                        padding: '1rem',
-                        borderRadius: '12px',
-                        border: '2px solid #eee',
-                        fontFamily: 'monospace',
-                        fontSize: '0.8rem',
-                        marginTop: '10px'
-                    }}
-                    placeholder="Fecha | Uber | Didi | Otros | Horas"
-                    value={textData}
-                    onChange={(e) => setTextData(e.target.value)}
-                />
+                <div className="file-input-container" style={{ textAlign: 'center', padding: '20px', border: '2px dashed #eee', borderRadius: '12px' }}>
+                    <input
+                        type="file"
+                        accept=".json"
+                        onChange={handleFileChange}
+                        disabled={status.loading}
+                        id="file-upload"
+                        style={{ display: 'none' }}
+                    />
+                    <label htmlFor="file-upload" className="btn-primary" style={{ cursor: 'pointer', display: 'inline-block' }}>
+                        {status.loading ? 'PROCESANDO...' : 'SELECCIONAR ARCHIVO .JSON'}
+                    </label>
+                </div>
 
-                {status === 'processing' && (
-                    <div style={{ marginTop: '1rem' }}>
+                {status.loading && (
+                    <div style={{ marginTop: '20px' }}>
                         <div className="progress-bar-bg">
                             <div className="progress-bar-fill" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
                         </div>
-                        <p style={{ textAlign: 'center', fontSize: '0.8rem' }}>{progress.current} / {progress.total} registros</p>
+                        <p style={{ fontSize: '0.8rem', textAlign: 'center' }}>
+                            Subiendo: {progress.current} de {progress.total}
+                        </p>
                     </div>
                 )}
 
-                <div style={{ marginTop: '1.5rem', display: 'flex', gap: '10px' }}>
-                    <button
-                        className="btn-primary"
-                        onClick={processData}
-                        disabled={status === 'processing' || !textData}
-                    >
-                        {status === 'processing' ? 'Subiendo...' : 'Iniciar Importación'}
-                    </button>
-                    <button
-                        onClick={() => { setTextData(''); setLog([]); setStatus('idle'); }}
-                        style={{ background: 'none', border: '1px solid #ccc', borderRadius: '12px', padding: '0 15px' }}
-                    >
-                        Limpiar
-                    </button>
-                </div>
-
-                {log.length > 0 && (
-                    <div style={{
-                        marginTop: '1.5rem',
-                        padding: '10px',
-                        background: '#f8f9fa',
-                        borderRadius: '8px',
-                        fontSize: '0.8rem',
-                        maxHeight: '150px',
-                        overflowY: 'auto'
+                {status.msg && (
+                    <div className="badge" style={{
+                        marginTop: '20px',
+                        display: 'block',
+                        textAlign: 'center',
+                        backgroundColor: status.type === 'error' ? '#fff0f0' : '#f0fff4',
+                        color: status.type === 'error' ? 'var(--primary)' : 'var(--xmas-green)'
                     }}>
-                        {log.map((l, i) => <div key={i} style={{ marginBottom: '5px' }}>{l}</div>)}
+                        {status.msg}
                     </div>
                 )}
+            </div>
+
+            <div className="card" style={{ marginTop: '20px', background: '#e3f2fd', border: 'none' }}>
+                <h4>💡 ¿Por qué JSON?</h4>
+                <p style={{ fontSize: '0.85rem', color: '#1565c0' }}>
+                    Al usar archivos JSON evitamos que el sistema se confunda con los puntos de mil o los espacios de las planillas. Es la forma más segura de no perder datos de tus ganancias.
+                </p>
             </div>
         </div>
     );
