@@ -10,23 +10,24 @@ export function MainLayout() {
 
     return (
         <div className="container">
-            <header className="header">
-                <h1>Driver Tracker</h1>
-                <p className="subtitle">Tu Copiloto Financiero</p>
-            </header>
+            {/* Header eliminado porque la nav está arriba y hace de header */}
 
             <nav className="main-nav">
                 <Link to="/" className={`nav-item ${isActive('/')}`}>
-                    📊 Dashboard
+                    <span className="nav-icon">📊</span>
+                    <span>Dashboard</span>
                 </Link>
                 <Link to="/history" className={`nav-item ${isActive('/history')}`}>
-                    📅 Historial
+                    <span className="nav-icon">📅</span>
+                    <span>Historial</span>
                 </Link>
                 <Link to="/planner" className={`nav-item ${isActive('/planner')}`}>
-                    ⚙️ Planificación
+                    <span className="nav-icon">⚙️</span>
+                    <span>Plan</span>
                 </Link>
                 <Link to="/import" className={`nav-item ${isActive('/import')}`}>
-                    📥 Importar
+                    <span className="nav-icon">📥</span>
+                    <span>Importar</span>
                 </Link>
             </nav>
 

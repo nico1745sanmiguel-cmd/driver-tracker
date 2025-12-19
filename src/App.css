@@ -33,23 +33,24 @@ body {
   background-color: var(--bg-app);
   color: var(--text-main);
   font-family: 'Poppins', sans-serif;
-  padding-bottom: 80px;
-  /* Espacio para la barra inferior en móvil */
+  padding-top: 80px;
+  /* Espacio para barra superior */
+  padding-bottom: 20px;
 }
 
-/* --- Navegación Inferior (Mobile First) --- */
+/* --- Navegación Superior (Mobile First) --- */
 .main-nav {
   background-color: var(--bg-card);
-  border-top: 1px solid #eee;
+  border-bottom: 1px solid #eee;
   position: fixed;
-  bottom: 0;
+  top: 0;
   left: 0;
   width: 100%;
   display: flex;
   justify-content: space-around;
-  padding: 12px 0;
+  padding: 10px 0;
   z-index: 1000;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
 .nav-item {
@@ -58,18 +59,34 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  /* Letra un poco más grande */
+  font-weight: 700;
   transition: all 0.3s ease;
+  flex: 1;
+  /* Ocupar espacio equitativo */
 }
 
 .nav-item.active {
   color: var(--primary);
+  position: relative;
+}
+
+/* Indicador activo pequeño */
+.nav-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  width: 40%;
+  height: 3px;
+  background-color: var(--primary);
+  border-radius: 4px 4px 0 0;
 }
 
 .nav-icon {
-  font-size: 1.5rem;
-  margin-bottom: 4px;
+  font-size: 1.8rem;
+  /* Icono más grande */
+  margin-bottom: 2px;
 }
 
 /* --- Layout de Escritorio --- */

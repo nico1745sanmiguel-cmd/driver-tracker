@@ -169,11 +169,9 @@ export function DashboardPage() {
     return (
         <div className="dashboard-page pb-40 fade-in max-w-lg mx-auto relative">
             {/* TOAST DE ÉXITO */}
-            <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 transform ${showToast ? 'translate-y-0 opacity-100' : '-translate-y-10 opacity-0 pointer-events-none'}`}>
-                <div className="bg-emerald-500 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 font-bold">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" />
-                    </svg>
+            <div className={`fixed top-24 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 transform ${showToast ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0 pointer-events-none'}`}>
+                <div className="bg-emerald-500 text-white text-sm px-6 py-3 rounded-full shadow-lg flex items-center gap-2 font-bold whitespace-nowrap">
+                    <span>✅</span>
                     <span>¡Día guardado con éxito!</span>
                 </div>
             </div>
@@ -293,17 +291,13 @@ export function DashboardPage() {
                     <button
                         type="submit"
                         disabled={totals.money === 0}
-                        className="btn-primary flex justify-between items-center shadow-xl hover:shadow-2xl transition-all"
+                        className="btn-primary flex flex-col justify-center items-center shadow-lg active:scale-95 transition-transform"
+                        style={{ height: 'auto', padding: '16px' }}
                     >
-                        <div className="text-left">
-                            <p className="text-xs text-white/80 uppercase font-bold">Total Diario</p>
-                            <p className="text-2xl font-black text-white">${totals.money.toLocaleString()}</p>
-                        </div>
-                        <div className="flex items-center gap-2 bg-white/20 px-5 py-3 rounded-xl backdrop-blur-sm shadow-inner">
-                            <span className="font-bold tracking-wide">GUARDAR</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                            </svg>
+                        <span className="text-xs text-white/90 uppercase font-bold tracking-wider mb-1">Total Diario</span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-2xl font-black text-white">${totals.money.toLocaleString()}</span>
+                            <span className="bg-white/20 px-2 py-0.5 rounded text-xs font-bold text-white">GUARDAR</span>
                         </div>
                     </button>
                     {totals.money > 0 && (
