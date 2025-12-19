@@ -6,7 +6,7 @@ const APPS = ['Uber', 'Didi', 'Cabify', 'Particular'];
 export function DashboardPage() {
     const { stats, actions, monthlyConfig } = useDriver();
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); // Default: Hoy
-    const [showToast, setShowToast] = useState(false);
+    const [saveStatus, setSaveStatus] = useState('idle');
 
     // Estado para ganancias por App
     const [earnings, setEarnings] = useState(
@@ -18,14 +18,6 @@ export function DashboardPage() {
         time: '', // Formato HH:MM
         km: ''
     });
-
-    // Auto-ocultar Toast
-    useEffect(() => {
-        if (showToast) {
-            const timer = setTimeout(() => setShowToast(false), 3000);
-            return () => clearTimeout(timer);
-        }
-    }, [showToast]);
 
     // Helpers de Formato
     const formatCurrency = (val) => {
@@ -139,7 +131,10 @@ export function DashboardPage() {
         // Reset y Feedback
         setEarnings(APPS.reduce((acc, app) => ({ ...acc, [app]: '' }), {}));
         setGlobalStats({ time: '', km: '' });
-        setShowToast(true);
+
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 2500);
+
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -168,13 +163,6 @@ export function DashboardPage() {
 
     return (
         <div className="dashboard-page pb-40 fade-in max-w-lg mx-auto relative">
-            {/* TOAST DE ÉXITO */}
-            <div className={`fixed top-24 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 transform ${showToast ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0 pointer-events-none'}`}>
-                <div className="bg-emerald-500 text-white text-sm px-6 py-3 rounded-full shadow-lg flex items-center gap-2 font-bold whitespace-nowrap">
-                    <span>✅</span>
-                    <span>¡Día guardado con éxito!</span>
-                </div>
-            </div>
 
             {/* 1. ENCUESTA DE DISPONIBILIDAD (META) */}
             <div className={`card mb-4 transition-all duration-300 ${today.type === 'high' ? 'border-l-4 border-orange-500 bg-orange-50' : ''}`}>
@@ -286,27 +274,35 @@ export function DashboardPage() {
                     </div>
                 </div>
 
-                {/* BOTÓN Y RESUMEN */}
+                {/* BOTÓN CON ESTADO */}
                 <div className="sticky bottom-4 z-10 px-0">
                     <button
                         type="submit"
                         disabled={totals.money === 0}
-                        className="btn-primary flex flex-col justify-center items-center shadow-lg active:scale-95 transition-transform"
-                        style={{ height: 'auto', padding: '16px' }}
+                        className={`w-full p-4 rounded-xl shadow-lg transition-all transform duration-300 ${saveStatus === 'success' ? 'bg-emerald-500 scale-105' : 'btn-primary active:scale-95'
+                            }`}
+                        style={{ height: 'auto', minHeight: '80px' }}
                     >
-                        <span className="text-xs text-white/90 uppercase font-bold tracking-wider mb-1">Total Diario</span>
-                        <div className="flex items-center gap-2">
-                            <span className="text-2xl font-black text-white">${totals.money.toLocaleString()}</span>
-                            <span className="bg-white/20 px-2 py-0.5 rounded text-xs font-bold text-white">GUARDAR</span>
-                        </div>
+                        {saveStatus === 'success' ? (
+                            <div className="flex flex-col items-center justify-center animate-bounce">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span className="text-xl font-black text-white uppercase tracking-widest">¡Guardado!</span>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col justify-center items-center">
+                                <span className="text-xs text-white/90 uppercase font-bold tracking-wider mb-1">Total Diario</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-3xl font-black text-white">${totals.money.toLocaleString()}</span>
+                                    {totals.money > 0 && <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold text-white tracking-widest uppercase">Guardar</span>}
+                                </div>
+                            </div>
+                        )}
                     </button>
-                    {totals.money > 0 && (
-                        <p className="text-center text-xs text-gray-400 mt-2 font-medium">
-                            Se guardarán {stats.plan.currentProgress > 0 ? 'tus registros' : 'tus primeros registros'} del día
-                        </p>
-                    )}
                 </div>
             </form>
         </div>
     );
 }
+```
