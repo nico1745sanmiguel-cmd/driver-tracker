@@ -1,18 +1,6 @@
 import { useState } from 'react';
 import { useDriver } from '../context/DriverContext';
 
-// Helper to format currency numbers with thousands separator
-const formatNumber = (val) => {
-    if (!val) return '';
-    const num = val.replace(/\D/g, ''); // strip non-digits
-    return new Intl.NumberFormat('es-CL').format(num); // using Chilean Spanish locale for standard dots (1.000)
-};
-
-// Helper to parse formatted string back to raw number
-const parseNumber = (val) => {
-    return val.replace(/\./g, '');
-};
-
 export function DashboardPage() {
     const { stats, actions, monthlyConfig } = useDriver();
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -20,152 +8,72 @@ export function DashboardPage() {
     const [hours, setHours] = useState('');
     const [earnings, setEarnings] = useState('');
 
-    const handleEarningsChange = (e) => {
-        const val = e.target.value;
-        // Allow only numbers and dots/commas
-        const raw = val.replace(/[^0-9]/g, '');
-        setEarnings(formatNumber(raw));
-    };
-
     const handleSubmit = (e) => {
         e.preventDefault();
-        const rawEarnings = parseNumber(earnings);
+        const rawEarnings = earnings.replace(/\./g, '');
         if (!hours || !rawEarnings) return;
-
-        actions.addShift({
-            date,
-            platform,
-            hours: parseFloat(hours),
-            earnings: parseFloat(rawEarnings)
-        });
-        setHours('');
-        setEarnings('');
+        actions.addShift({ date, platform, hours: parseFloat(hours), earnings: parseFloat(rawEarnings) });
+        setHours(''); setEarnings('');
     };
 
-    const { plan } = stats;
-    // Calculate today's target
-    const currentDay = new Date(date + 'T00:00:00');
-    const dayOfWeek = currentDay.getDay();
-    let todayTarget = 0;
-    let isStrong = false;
-    let isRest = false;
+    // --- Lógica de Meta de Hoy con Vacaciones ---
+    const checkToday = () => {
+        const current = new Date(date + 'T00:00:00');
+        const dateStr = current.toISOString().split('T')[0];
+        const dayOfWeek = current.getDay();
 
-    if (plan) {
-        if (monthlyConfig.offDays.includes(dayOfWeek)) {
-            isRest = true;
+        let status = { target: 0, type: 'normal' };
+
+        if (monthlyConfig.vacationStart && monthlyConfig.vacationEnd &&
+            dateStr >= monthlyConfig.vacationStart && dateStr <= monthlyConfig.vacationEnd) {
+            status.type = 'vacation';
+        } else if (monthlyConfig.offDays.includes(dayOfWeek)) {
+            status.type = 'rest';
         } else if (monthlyConfig.highDemandDays.includes(dayOfWeek)) {
-            todayTarget = plan.highGoal;
-            isStrong = true;
+            status.target = stats.plan.highGoal;
+            status.type = 'high';
         } else {
-            todayTarget = plan.normalGoal;
+            status.target = stats.plan.normalGoal;
         }
-    }
+        return status;
+    };
+
+    const today = checkToday();
 
     return (
         <div className="dashboard-page fade-in">
-            {/* Target Banner */}
-            {monthlyConfig.budget > 0 && (
-                <div className="card progress-card" style={{ marginBottom: '1.5rem' }}>
-                    <div className="progress-info" style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Progreso Mensual</span>
-                        <span>{plan.currentProgress.toFixed(1)}% de ${parseInt(monthlyConfig.budget).toLocaleString()}</span>
-                    </div>
-                    <div className="progress-bar-container">
-                        <div
-                            className="progress-bar"
-                            style={{ width: `${plan.currentProgress}%` }}
-                        ></div>
-                    </div>
+            {/* Banner Dinámico de Meta */}
+            <div className="card target-card" style={{ borderLeft: `8px solid ${today.type === 'high' ? 'var(--primary)' : '#ccc'}` }}>
+                <div className="progress-header">
+                    <span>Progreso del Mes</span>
+                    <strong>{stats.plan.currentProgress.toFixed(1)}%</strong>
+                </div>
+                <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${stats.plan.currentProgress}%` }}></div></div>
 
-                    <div className="today-target-banner" style={{
-                        background: isRest ? 'var(--bg-secondary)' : (isStrong ? 'rgba(56, 189, 248, 0.1)' : 'transparent'),
-                        padding: '1rem',
-                        borderRadius: 'var(--radius-md)',
-                        border: isStrong ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                        textAlign: 'center'
-                    }}>
-                        <h3>Objetivo para {currentDay.toLocaleDateString('es-ES', { weekday: 'long' })}</h3>
-                        {isRest ? (
-                            <p className="text-secondary">¡Día de Descanso! Disfruta.</p>
-                        ) : (
-                            <p className="stat-value text-accent">${Math.round(todayTarget).toLocaleString()}</p>
-                        )}
-                        {isStrong && <span className="badge-strong">🔥 Día Fuerte (x2)</span>}
-                    </div>
-                </div>
-            )}
-
-            {/* Stats Grid */}
-            <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
-                <div className="card stat-card">
-                    <h3>Ganancias Totales</h3>
-                    <p className="stat-value text-accent">${stats.totalEarnings.toLocaleString()}</p>
-                </div>
-                <div className="card stat-card">
-                    <h3>Horas Trabajadas</h3>
-                    <p className="stat-value">{stats.totalHours}h</p>
-                </div>
-                <div className="card stat-card">
-                    <h3>Promedio / Hora</h3>
-                    <p className="stat-value">${stats.hourlyRate}</p>
+                <div className="today-info">
+                    <h4>Meta para hoy ({date}):</h4>
+                    {today.type === 'vacation' || today.type === 'rest' ? (
+                        <p className="status-msg">🏝️ ¡Día libre! Meta: $0</p>
+                    ) : (
+                        <h2 className="today-amount">${Math.round(today.target).toLocaleString()}</h2>
+                    )}
+                    {today.type === 'high' && <span className="badge">🔥 DÍA FUERTE (x2)</span>}
                 </div>
             </div>
 
-            {/* Entry Form */}
+            {/* Formulario de Registro */}
             <div className="card form-card">
-                <h2>Registrar Turno</h2>
-                <form onSubmit={handleSubmit} className="shift-form">
-                    <div className="form-group">
-                        <label>Fecha</label>
-                        <input
-                            type="date"
-                            value={date}
-                            onChange={(e) => setDate(e.target.value)}
-                            required
-                        />
+                <h3>Nuevo Viaje</h3>
+                <form onSubmit={handleSubmit}>
+                    <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                    <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
+                        <option>Uber</option><option>Didi</option><option>Cabify</option><option>Particular</option>
+                    </select>
+                    <div className="input-group">
+                        <input type="number" step="0.5" placeholder="Horas" value={hours} onChange={(e) => setHours(e.target.value)} />
+                        <input type="text" placeholder="Plata ($)" value={earnings} onChange={(e) => setEarnings(e.target.value.replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, "."))} />
                     </div>
-
-                    <div className="form-group">
-                        <label>Plataforma</label>
-                        <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-                            <option value="Uber">Uber</option>
-                            <option value="Didi">Didi</option>
-                            <option value="Cabify">Cabify</option>
-                            <option value="Indriver">Indriver</option>
-                            <option value="Otros">Otros</option>
-                        </select>
-                    </div>
-
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label>Horas</label>
-                            <input
-                                type="number"
-                                inputMode="decimal"
-                                step="0.5"
-                                min="0"
-                                placeholder="Ej. 5"
-                                value={hours}
-                                onChange={(e) => setHours(e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label>Ganancia ($)</label>
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                placeholder="Ej. 30.000"
-                                value={earnings}
-                                onChange={handleEarningsChange}
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <button type="submit" className="btn-primary">
-                        Agregar Registro
-                    </button>
+                    <button type="submit" className="btn-primary">GUARDAR REGISTRO</button>
                 </form>
             </div>
         </div>
