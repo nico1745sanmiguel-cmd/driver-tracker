@@ -5,70 +5,74 @@ const APPS = ['Uber', 'Didi', 'Cabify', 'Indriver', 'Particular'];
 
 export function DashboardPage() {
     const { stats, actions, monthlyConfig } = useDriver();
-    const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+    const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); // Default: Hoy
 
-    // Estado unificado para la grilla
-    const [grid, setGrid] = useState(
-        APPS.reduce((acc, app) => ({
-            ...acc,
-            [app]: { earnings: '', hours: '', km: '' }
-        }), {})
+    // Estado para ganancias por App
+    const [earnings, setEarnings] = useState(
+        APPS.reduce((acc, app) => ({ ...acc, [app]: '' }), {})
     );
+
+    // Estado para Totales Globales
+    const [globalStats, setGlobalStats] = useState({
+        hours: '',
+        minutes: '',
+        km: ''
+    });
 
     // Helpers de Formato
     const formatCurrency = (val) => {
-        // Eliminar puntos existentes y caracteres no numéricos
         const clean = val.replace(/\D/g, '');
-        // Agregar puntos de mil
         return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     };
 
     const cleanCurrency = (val) => parseFloat(val.replace(/\./g, '')) || 0;
 
-    // Manejador de Inputs
-    const handleChange = (app, field, value) => {
-        let finalValue = value;
-        if (field === 'earnings') {
-            finalValue = formatCurrency(value);
-        }
+    // Manejadores
+    const handleEarningChange = (app, value) => {
+        setEarnings(prev => ({ ...prev, [app]: formatCurrency(value) }));
+    };
 
-        setGrid(prev => ({
-            ...prev,
-            [app]: { ...prev[app], [field]: finalValue }
-        }));
+    const handleGlobalChange = (field, value) => {
+        setGlobalStats(prev => ({ ...prev, [field]: value }));
     };
 
     // Cálculos en tiempo real
     const totals = useMemo(() => {
         let tMoney = 0;
-        let tHours = 0;
-        let tKm = 0;
+        Object.values(earnings).forEach(val => tMoney += cleanCurrency(val));
 
-        Object.values(grid).forEach(row => {
-            tMoney += cleanCurrency(row.earnings);
-            tHours += parseFloat(row.hours) || 0;
-            tKm += parseFloat(row.km) || 0;
-        });
+        const hrs = parseFloat(globalStats.hours) || 0;
+        const mins = parseFloat(globalStats.minutes) || 0;
+        const totalDuration = hrs + (mins / 60);
 
-        return { money: tMoney, hours: tHours, km: tKm };
-    }, [grid]);
+        return { money: tMoney, duration: totalDuration };
+    }, [earnings, globalStats]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        const promises = Object.entries(grid).map(([platformName, data]) => {
-            const money = cleanCurrency(data.earnings);
-            const hrs = parseFloat(data.hours) || 0;
-            const kms = parseFloat(data.km) || 0;
+        const totalMoney = totals.money;
+        const totalKm = parseFloat(globalStats.km) || 0;
+        const totalHours = totals.duration;
 
-            // Solo guardamos si hay plata ingresada (asumimos que valida si trabajó)
+        if (totalMoney === 0) return;
+
+        const promises = Object.entries(earnings).map(([platformName, val]) => {
+            const money = cleanCurrency(val);
             if (money > 0) {
+                // Cálculo de Proporción (Regla de 3 simple basada en ganancia)
+                // Si ganaste el 50% de la plata en Uber, se te asigna el 50% del tiempo y km.
+                const ratio = money / totalMoney;
+
+                const allocatedHours = parseFloat((totalHours * ratio).toFixed(2));
+                const allocatedKm = Math.round(totalKm * ratio); // Km enteros mejor
+
                 return actions.addShift({
                     date,
                     platform: platformName,
-                    hours: hrs,
+                    hours: allocatedHours,
                     earnings: money,
-                    km: kms // Nuevo campo
+                    km: allocatedKm
                 });
             }
             return Promise.resolve();
@@ -77,10 +81,11 @@ export function DashboardPage() {
         await Promise.all(promises);
 
         // Resetear Formulario
-        setGrid(APPS.reduce((acc, app) => ({ ...acc, [app]: { earnings: '', hours: '', km: '' } }), {}));
+        setEarnings(APPS.reduce((acc, app) => ({ ...acc, [app]: '' }), {}));
+        setGlobalStats({ hours: '', minutes: '', km: '' });
     };
 
-    // --- Lógica de Diseño (Meta del día) ---
+    // Meta del día
     const checkToday = () => {
         const current = new Date(date + 'T00:00:00');
         const dateStr = current.toISOString().split('T')[0];
@@ -112,7 +117,6 @@ export function DashboardPage() {
                     <strong className="text-[var(--primary)] text-lg">{stats.plan.currentProgress.toFixed(1)}%</strong>
                 </div>
                 <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${stats.plan.currentProgress}%` }}></div></div>
-
                 <div className="mt-4 text-center">
                     <h4 className="text-sm text-gray-400 uppercase tracking-wider mb-1">Meta Sugerida ({date})</h4>
                     {today.type === 'vacation' || today.type === 'rest' ? (
@@ -124,85 +128,91 @@ export function DashboardPage() {
                 </div>
             </div>
 
-            {/* Nueva Grilla de Carga */}
+            {/* Formulario Unificado */}
             <div className="card form-card">
                 <div className="flex justify-between items-center mb-6 border-b pb-4">
-                    <h3 className="text-xl font-bold">Resumen Diario</h3>
+                    <h3 className="text-xl font-bold">Carga del Día</h3>
                     <input
                         type="date"
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
-                        className="p-2 border rounded-lg active:border-[var(--primary)] outline-none"
+                        className="p-2 border rounded-lg font-bold text-gray-700 outline-none focus:border-[var(--primary)] text-sm"
                     />
                 </div>
 
                 <form onSubmit={handleSubmit}>
-                    <div className="grid gap-4 mb-8">
-                        {/* Headers Grilla */}
-                        <div className="grid grid-cols-[1fr_1.5fr_1fr_1fr] gap-2 text-xs font-bold text-gray-400 uppercase text-center md:text-left">
-                            <span className="text-left pl-2">App</span>
-                            <span>Ganancia</span>
-                            <span>Hs</span>
-                            <span>Km</span>
-                        </div>
-
+                    {/* Sección 1: Dinero por App */}
+                    <p className="text-xs text-gray-400 font-bold uppercase mb-2">1. Ganancias ($)</p>
+                    <div className="grid gap-3 mb-6">
                         {APPS.map(app => (
-                            <div key={app} className="grid grid-cols-[1fr_1.5fr_1fr_1fr] gap-2 items-center">
-                                {/* Nombre APP */}
-                                <div className="font-bold pl-2 text-sm">{app}</div>
-
-                                {/* Ganancia */}
+                            <div key={app} className="flex items-center gap-3">
+                                <div className="w-24 font-bold text-sm text-gray-700">{app}</div>
                                 <input
                                     type="text"
-                                    placeholder="$"
-                                    className="p-2 border rounded text-right tracking-tighter"
-                                    value={grid[app].earnings}
-                                    onChange={(e) => handleChange(app, 'earnings', e.target.value)}
-                                />
-
-                                {/* Horas */}
-                                <input
-                                    type="number"
-                                    step="0.5"
-                                    placeholder="h"
-                                    className="p-2 border rounded text-center"
-                                    value={grid[app].hours}
-                                    onChange={(e) => handleChange(app, 'hours', e.target.value)}
-                                />
-
-                                {/* Kms */}
-                                <input
-                                    type="number"
-                                    step="1"
-                                    placeholder="km"
-                                    className="p-2 border rounded text-center"
-                                    value={grid[app].km}
-                                    onChange={(e) => handleChange(app, 'km', e.target.value)}
+                                    placeholder="$0"
+                                    className="flex-1 p-3 border rounded-lg text-right font-mono text-lg tracking-tight focus:border-[var(--primary)] outline-none"
+                                    value={earnings[app]}
+                                    onChange={(e) => handleEarningChange(app, e.target.value)}
                                 />
                             </div>
                         ))}
                     </div>
 
-                    {/* Barra de Totales Flotante/Fija en form */}
-                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6">
-                        <div className="flex justify-between items-end">
-                            <div className="text-sm text-gray-500">
-                                <div>Horas: <span className="font-bold text-gray-800">{totals.hours}h</span></div>
-                                <div>Distancia: <span className="font-bold text-gray-800">{totals.km}km</span></div>
+                    {/* Sección 2: Operativa Global */}
+                    <p className="text-xs text-gray-400 font-bold uppercase mb-2">2. Datos Generales (Total del día)</p>
+                    <div className="grid grid-cols-2 gap-4 mb-8 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">TIEMPO CONECTADO</label>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    placeholder="Hs"
+                                    className="w-full p-3 border rounded-lg text-center font-bold text-lg outline-none focus:border-[var(--primary)]"
+                                    value={globalStats.hours}
+                                    onChange={(e) => handleGlobalChange('hours', e.target.value)}
+                                />
+                                <span className="text-xl font-bold text-gray-300">:</span>
+                                <input
+                                    type="number"
+                                    placeholder="Min"
+                                    className="w-full p-3 border rounded-lg text-center font-bold text-lg outline-none focus:border-[var(--primary)]"
+                                    value={globalStats.minutes}
+                                    onChange={(e) => handleGlobalChange('minutes', e.target.value)}
+                                />
                             </div>
-                            <div className="text-right">
-                                <span className="block text-xs text-gray-400 uppercase">Total Diario</span>
-                                <span className="text-2xl font-black text-[var(--primary)]">${totals.money.toLocaleString()}</span>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">KILÓMETROS</label>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    placeholder="0"
+                                    className="w-full p-3 border rounded-lg text-center font-bold text-lg outline-none focus:border-[var(--primary)]"
+                                    value={globalStats.km}
+                                    onChange={(e) => handleGlobalChange('km', e.target.value)}
+                                />
+                                <span className="absolute right-3 top-4 text-xs font-bold text-gray-400">KM</span>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Barra de Totales */}
+                    <div className="bg-[var(--text-main)] text-white p-4 rounded-xl shadow-lg mb-4 flex justify-between items-center">
+                        <div>
+                            <p className="text-xs text-gray-400 uppercase">Total Recaudado</p>
+                            <p className="text-2xl font-black">${totals.money.toLocaleString()}</p>
+                        </div>
+                        <div className="text-right text-sm text-gray-400">
+                            <p>{stats.plan.currentProgress > 10 ? '¡Buen trabajo!' : 'Comenzando...'}</p>
                         </div>
                     </div>
 
                     <button
                         type="submit"
-                        className="btn-primary flex justify-center items-center gap-2 hover:scale-[1.02] transition-transform"
+                        className="btn-primary w-full py-4 text-lg font-bold shadow-xl hover:scale-[1.01] transition-transform"
                         disabled={totals.money === 0}
                     >
-                        <span>💾 GUARDAR DÍA COMPLETO</span>
+                        GUARDAR DÍA
                     </button>
                 </form>
             </div>
