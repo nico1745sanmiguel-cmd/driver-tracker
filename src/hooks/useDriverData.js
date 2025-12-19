@@ -1,33 +1,49 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../lib/firebaseClient';
-import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, setDoc } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, setDoc, where } from 'firebase/firestore';
 
 export function useDriverData() {
     const [shifts, setShifts] = useState([]);
+    const [currentDate, setCurrentDate] = useState(new Date()); // Para controlar el mes visible
     const [monthlyConfig, setMonthlyConfig] = useState({
         budget: 0, offDays: [], highDemandDays: [], vacationStart: '', vacationEnd: ''
     });
 
-    // 1. Escuchar Viajes y Configuración
+    // Helpers para fechas
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+
+    // Calcular primer y último día del mes en formato string YYYY-MM-DD para la query
+    // Nota: Asumimos que las fechas en la DB están como "YYYY-MM-DD"
+    const startOfMonth = new Date(year, month, 1).toISOString().split('T')[0];
+    const endOfMonth = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+    // 1. Escuchar Viajes (Solo del mes seleccionado) y Configuración
     useEffect(() => {
-        const q = query(collection(db, "shifts"), orderBy("date", "desc"));
+        // Query optimizada: Solo trae los del rango de fechas actual
+        const q = query(
+            collection(db, "shifts"),
+            where("date", ">=", startOfMonth),
+            where("date", "<=", endOfMonth),
+            orderBy("date", "desc")
+        );
+
         const unsubShifts = onSnapshot(q, (snap) => {
             setShifts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
+
         const unsubConfig = onSnapshot(doc(db, "configs", "default_config"), (snap) => {
             if (snap.exists()) setMonthlyConfig(snap.data());
         });
+
         return () => { unsubShifts(); unsubConfig(); };
-    }, []);
+    }, [year, month]); // Se vuelve a ejecutar si cambia el mes/año seleccionado
 
     // 2. Cálculos Inteligentes (Días, Pesos y Metas)
     const stats = useMemo(() => {
         const totalEarnings = shifts.reduce((acc, curr) => acc + (Number(curr.earnings) || 0), 0);
         const totalHours = shifts.reduce((acc, curr) => acc + (Number(curr.hours) || 0), 0);
-
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
+        const totalKm = shifts.reduce((acc, curr) => acc + (Number(curr.km) || 0), 0);
         const lastDay = new Date(year, month + 1, 0).getDate();
 
         let totalWeight = 0;
@@ -54,7 +70,9 @@ export function useDriverData() {
         return {
             totalEarnings,
             totalHours,
+            totalKm,
             hourlyRate: totalHours > 0 ? (totalEarnings / totalHours).toFixed(0) : 0,
+            kmRate: totalKm > 0 ? (totalEarnings / totalKm).toFixed(0) : 0,
             plan: {
                 normalGoal: unitValue,
                 highGoal: unitValue * 2,
@@ -62,14 +80,18 @@ export function useDriverData() {
                 currentProgress: monthlyConfig.budget > 0 ? (totalEarnings / monthlyConfig.budget) * 100 : 0
             }
         };
-    }, [shifts, monthlyConfig]);
+    }, [shifts, monthlyConfig, year, month]);
 
     return {
-        shifts, monthlyConfig, stats,
+        shifts,
+        monthlyConfig,
+        stats,
+        currentDate, // Exponemos la fecha actual para el UI
         actions: {
             addShift: (s) => addDoc(collection(db, "shifts"), { ...s, createdAt: new Date() }),
             deleteShift: (id) => deleteDoc(doc(db, "shifts", id)),
-            updateConfig: (c) => setDoc(doc(db, "configs", "default_config"), c)
+            updateConfig: (c) => setDoc(doc(db, "configs", "default_config"), c),
+            setMonth: (date) => setCurrentDate(date) // Permitir cambiar el mes visible
         }
     };
 }

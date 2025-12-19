@@ -16,30 +16,38 @@ export function ImportPage() {
         reader.onload = async (evt) => {
             try {
                 const data = JSON.parse(evt.target.result);
-                if (!Array.isArray(data)) throw new Error("Formato inválido");
+                if (!Array.isArray(data)) throw new Error("Formato inválido: Se espera una lista de viajes.");
 
                 const total = data.length;
                 setProgress({ current: 0, total: total });
 
                 // --- CONFIGURACIÓN DE VELOCIDAD ---
-                const CHUNK_SIZE = 10; // Mandamos de a 10 viajes juntos
+                const CHUNK_SIZE = 20; // Aumentamos el lote para mayor velocidad
                 let processed = 0;
+                let errorCount = 0;
 
                 for (let i = 0; i < total; i += CHUNK_SIZE) {
-                    // Seleccionamos el grupo (lote)
                     const chunk = data.slice(i, i + CHUNK_SIZE);
 
-                    // Los mandamos todos juntos en paralelo
                     await Promise.all(chunk.map(shift => {
-                        if (shift.date && shift.platform) {
-                            return actions.addShift({
-                                date: shift.date,
-                                platform: shift.platform,
-                                hours: parseFloat(shift.hours) || 0,
-                                earnings: parseFloat(shift.earnings) || 0
-                            });
+                        // Validación más estricta
+                        if (!shift.date || !shift.platform) return Promise.resolve();
+
+                        const hours = parseFloat(shift.hours);
+                        const earnings = parseFloat(shift.earnings);
+
+                        // Ignoramos registros con datos numéricos corruptos
+                        if (isNaN(hours) || isNaN(earnings)) {
+                            errorCount++;
+                            return Promise.resolve();
                         }
-                        return Promise.resolve();
+
+                        return actions.addShift({
+                            date: shift.date,
+                            platform: shift.platform,
+                            hours: hours,
+                            earnings: earnings
+                        });
                     }));
 
                     processed += chunk.length;
@@ -48,7 +56,7 @@ export function ImportPage() {
 
                 setStatus({
                     loading: false,
-                    msg: `¡Listo! Se importaron ${total} registros en tiempo récord.`,
+                    msg: `¡Listo! Se procesaron ${total} registros. ${errorCount > 0 ? `(${errorCount} ignorados por error)` : ''}`,
                     type: 'success'
                 });
 
@@ -56,7 +64,7 @@ export function ImportPage() {
                 console.error(err);
                 setStatus({
                     loading: false,
-                    msg: 'Error: El archivo no es compatible.',
+                    msg: 'Error crítico: El archivo no es un JSON válido o está corrupto.',
                     type: 'error'
                 });
             }
@@ -66,53 +74,53 @@ export function ImportPage() {
     };
 
     return (
-        <div className="import-page fade-in" style={{ paddingBottom: '100px' }}>
+        <div className="pb-24 fade-in">
             <div className="card">
-                <h2>📥 Importación de Alta Velocidad</h2>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                    Subí tu archivo <strong>.json</strong>. Ahora el sistema procesa los datos en paralelo para que no tengas que esperar.
+                <h2 className="text-xl font-bold mb-4">📥 Importación de Alta Velocidad</h2>
+                <p className="text-gray-500 text-sm mb-6">
+                    Subí tu archivo <strong>.json</strong>. El sistema procesará los datos en paralelo e ignorará automáticamente los registros inválidos.
                 </p>
 
-                <div style={{ textAlign: 'center', padding: '30px', border: '3px dashed var(--primary)', borderRadius: '16px', background: '#fff0f5' }}>
+                <div className="text-center p-8 border-3 border-dashed border-[var(--primary)] rounded-xl bg-pink-50">
                     <input
                         type="file"
                         accept=".json"
                         onChange={handleFileChange}
                         disabled={status.loading}
                         id="file-upload"
-                        style={{ display: 'none' }}
+                        className="hidden"
                     />
-                    <label htmlFor="file-upload" className="btn-primary" style={{ cursor: 'pointer', display: 'inline-block', padding: '15px 30px' }}>
+                    <label
+                        htmlFor="file-upload"
+                        className={`btn-primary cursor-pointer inline-block px-8 py-4 ${status.loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
                         {status.loading ? 'CARGANDO DATOS...' : 'SELECCIONAR ARCHIVO JSON'}
                     </label>
                 </div>
 
                 {status.loading && (
-                    <div style={{ marginTop: '25px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                    <div className="mt-6">
+                        <div className="flex justify-between mb-2 text-sm font-bold">
                             <span>Progreso de subida</span>
-                            <span>{Math.round((progress.current / progress.total) * 100)}%</span>
+                            <span>{progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0}%</span>
                         </div>
-                        <div className="progress-bar-bg" style={{ height: '16px' }}>
-                            <div className="progress-bar-fill" style={{ width: `${(progress.current / progress.total) * 100}%`, borderRadius: '10px' }}></div>
+                        <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-[var(--primary)] transition-all duration-300 rounded-full"
+                                style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
+                            ></div>
                         </div>
-                        <p style={{ fontSize: '0.75rem', textAlign: 'center', marginTop: '8px', color: 'var(--text-muted)' }}>
+                        <p className="text-xs text-center mt-2 text-gray-500">
                             Procesados: {progress.current} de {progress.total} viajes.
                         </p>
                     </div>
                 )}
 
                 {status.msg && (
-                    <div className="badge" style={{
-                        marginTop: '20px',
-                        display: 'block',
-                        textAlign: 'center',
-                        padding: '12px',
-                        fontSize: '0.9rem',
-                        backgroundColor: status.type === 'error' ? '#ffebee' : '#f0fdf4',
-                        color: status.type === 'error' ? '#c62828' : '#166534',
-                        border: '1px solid currentColor'
-                    }}>
+                    <div className={`mt-5 text-center p-3 text-sm rounded border ${status.type === 'error'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-green-50 text-green-700 border-green-200'
+                        }`}>
                         {status.msg}
                     </div>
                 )}
