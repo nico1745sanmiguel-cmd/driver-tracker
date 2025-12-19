@@ -10,41 +10,45 @@ export function ImportPage() {
         const file = e.target.files[0];
         if (!file) return;
 
-        setStatus({ loading: true, msg: 'Leyendo archivo...', type: 'info' });
+        setStatus({ loading: true, msg: 'Iniciando importación veloz...', type: 'info' });
 
         const reader = new FileReader();
         reader.onload = async (evt) => {
             try {
-                // Convertimos el texto del archivo en un objeto real de JS
                 const data = JSON.parse(evt.target.result);
+                if (!Array.isArray(data)) throw new Error("Formato inválido");
 
-                if (!Array.isArray(data)) {
-                    throw new Error("El formato del archivo no es una lista de viajes.");
-                }
+                const total = data.length;
+                setProgress({ current: 0, total: total });
 
-                setProgress({ current: 0, total: data.length });
-                let successCount = 0;
+                // --- CONFIGURACIÓN DE VELOCIDAD ---
+                const CHUNK_SIZE = 10; // Mandamos de a 10 viajes juntos
+                let processed = 0;
 
-                // Subida secuencial a Firebase
-                for (let i = 0; i < data.length; i++) {
-                    const shift = data[i];
+                for (let i = 0; i < total; i += CHUNK_SIZE) {
+                    // Seleccionamos el grupo (lote)
+                    const chunk = data.slice(i, i + CHUNK_SIZE);
 
-                    // Validamos que el objeto tenga lo mínimo necesario
-                    if (shift.date && shift.platform) {
-                        await actions.addShift({
-                            date: shift.date,
-                            platform: shift.platform,
-                            hours: parseFloat(shift.hours) || 0,
-                            earnings: parseFloat(shift.earnings) || 0
-                        });
-                        successCount++;
-                    }
-                    setProgress(prev => ({ ...prev, current: i + 1 }));
+                    // Los mandamos todos juntos en paralelo
+                    await Promise.all(chunk.map(shift => {
+                        if (shift.date && shift.platform) {
+                            return actions.addShift({
+                                date: shift.date,
+                                platform: shift.platform,
+                                hours: parseFloat(shift.hours) || 0,
+                                earnings: parseFloat(shift.earnings) || 0
+                            });
+                        }
+                        return Promise.resolve();
+                    }));
+
+                    processed += chunk.length;
+                    setProgress({ current: processed, total: total });
                 }
 
                 setStatus({
                     loading: false,
-                    msg: `¡Éxito! Se importaron ${successCount} registros correctamente.`,
+                    msg: `¡Listo! Se importaron ${total} registros en tiempo récord.`,
                     type: 'success'
                 });
 
@@ -52,7 +56,7 @@ export function ImportPage() {
                 console.error(err);
                 setStatus({
                     loading: false,
-                    msg: 'Error: El archivo JSON es inválido o tiene errores.',
+                    msg: 'Error: El archivo no es compatible.',
                     type: 'error'
                 });
             }
@@ -64,12 +68,12 @@ export function ImportPage() {
     return (
         <div className="import-page fade-in" style={{ paddingBottom: '100px' }}>
             <div className="card">
-                <h2>📥 Importador Profesional (JSON)</h2>
+                <h2>📥 Importación de Alta Velocidad</h2>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                    Seleccioná el archivo <strong>.json</strong> con tu historial para sincronizarlo con Firebase.
+                    Subí tu archivo <strong>.json</strong>. Ahora el sistema procesa los datos en paralelo para que no tengas que esperar.
                 </p>
 
-                <div className="file-input-container" style={{ textAlign: 'center', padding: '20px', border: '2px dashed #eee', borderRadius: '12px' }}>
+                <div style={{ textAlign: 'center', padding: '30px', border: '3px dashed var(--primary)', borderRadius: '16px', background: '#fff0f5' }}>
                     <input
                         type="file"
                         accept=".json"
@@ -78,18 +82,22 @@ export function ImportPage() {
                         id="file-upload"
                         style={{ display: 'none' }}
                     />
-                    <label htmlFor="file-upload" className="btn-primary" style={{ cursor: 'pointer', display: 'inline-block' }}>
-                        {status.loading ? 'PROCESANDO...' : 'SELECCIONAR ARCHIVO .JSON'}
+                    <label htmlFor="file-upload" className="btn-primary" style={{ cursor: 'pointer', display: 'inline-block', padding: '15px 30px' }}>
+                        {status.loading ? 'CARGANDO DATOS...' : 'SELECCIONAR ARCHIVO JSON'}
                     </label>
                 </div>
 
                 {status.loading && (
-                    <div style={{ marginTop: '20px' }}>
-                        <div className="progress-bar-bg">
-                            <div className="progress-bar-fill" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
+                    <div style={{ marginTop: '25px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                            <span>Progreso de subida</span>
+                            <span>{Math.round((progress.current / progress.total) * 100)}%</span>
                         </div>
-                        <p style={{ fontSize: '0.8rem', textAlign: 'center' }}>
-                            Subiendo: {progress.current} de {progress.total}
+                        <div className="progress-bar-bg" style={{ height: '16px' }}>
+                            <div className="progress-bar-fill" style={{ width: `${(progress.current / progress.total) * 100}%`, borderRadius: '10px' }}></div>
+                        </div>
+                        <p style={{ fontSize: '0.75rem', textAlign: 'center', marginTop: '8px', color: 'var(--text-muted)' }}>
+                            Procesados: {progress.current} de {progress.total} viajes.
                         </p>
                     </div>
                 )}
@@ -99,19 +107,15 @@ export function ImportPage() {
                         marginTop: '20px',
                         display: 'block',
                         textAlign: 'center',
-                        backgroundColor: status.type === 'error' ? '#fff0f0' : '#f0fff4',
-                        color: status.type === 'error' ? 'var(--primary)' : 'var(--xmas-green)'
+                        padding: '12px',
+                        fontSize: '0.9rem',
+                        backgroundColor: status.type === 'error' ? '#ffebee' : '#f0fdf4',
+                        color: status.type === 'error' ? '#c62828' : '#166534',
+                        border: '1px solid currentColor'
                     }}>
                         {status.msg}
                     </div>
                 )}
-            </div>
-
-            <div className="card" style={{ marginTop: '20px', background: '#e3f2fd', border: 'none' }}>
-                <h4>💡 ¿Por qué JSON?</h4>
-                <p style={{ fontSize: '0.85rem', color: '#1565c0' }}>
-                    Al usar archivos JSON evitamos que el sistema se confunda con los puntos de mil o los espacios de las planillas. Es la forma más segura de no perder datos de tus ganancias.
-                </p>
             </div>
         </div>
     );
