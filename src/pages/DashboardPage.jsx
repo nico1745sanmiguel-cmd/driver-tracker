@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useDriver } from '../context/DriverContext';
 
 const APPS = ['Uber', 'Didi', 'Cabify', 'Particular'];
@@ -6,6 +6,7 @@ const APPS = ['Uber', 'Didi', 'Cabify', 'Particular'];
 export function DashboardPage() {
     const { stats, actions, monthlyConfig } = useDriver();
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); // Default: Hoy
+    const [showToast, setShowToast] = useState(false);
 
     // Estado para ganancias por App
     const [earnings, setEarnings] = useState(
@@ -18,6 +19,14 @@ export function DashboardPage() {
         km: ''
     });
 
+    // Auto-ocultar Toast
+    useEffect(() => {
+        if (showToast) {
+            const timer = setTimeout(() => setShowToast(false), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [showToast]);
+
     // Helpers de Formato
     const formatCurrency = (val) => {
         const clean = val.replace(/\D/g, '');
@@ -28,20 +37,14 @@ export function DashboardPage() {
 
     // --- MANEJO DE TIEMPO INTELIGENTE ---
     const handleTimeChange = (e) => {
-        // Permitimos escribir libremente, el formateo visual lo hacemos dinámico
         let val = e.target.value.replace(/\D/g, '');
-
-        // Limitar longitud sensata (ej: 5 dígitos max 100:00)
         if (val.length > 4) val = val.slice(0, 4);
-
         setGlobalStats(prev => ({ ...prev, time: val }));
     };
 
-    // Helper para visualización del Input
     const formatTimeDisplay = (raw) => {
         if (!raw) return '';
-        if (raw.length < 3) return raw + 'm'; // 30 -> 30m
-        // 630 -> 6:30
+        if (raw.length < 3) return raw + 'm';
         const minutes = raw.slice(-2);
         const hours = raw.slice(0, -2);
         return `${hours}:${minutes}`;
@@ -53,9 +56,31 @@ export function DashboardPage() {
     };
 
     const handleKmChange = (val) => {
-        // Solo permitir números
         const clean = val.replace(/\D/g, '');
         setGlobalStats(prev => ({ ...prev, km: clean }));
+    };
+
+    // --- UX: Scroll y Navegación ---
+    const handleFocus = (e) => {
+        // Scroll suave para centrar el input y ver el de abajo
+        setTimeout(() => {
+            e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const form = e.target.form;
+            const index = Array.prototype.indexOf.call(form, e.target);
+            const nextElement = form.elements[index + 1];
+            if (nextElement) {
+                nextElement.focus();
+            } else {
+                // Si es el último, intentar guardar
+                e.target.blur();
+            }
+        }
     };
 
     // Cálculos en tiempo real
@@ -63,7 +88,6 @@ export function DashboardPage() {
         let tMoney = 0;
         Object.values(earnings).forEach(val => tMoney += cleanCurrency(val));
 
-        // Parsear hora inteligente (últimos 2 dígitos = minutos)
         const timeStr = globalStats.time;
         let hrs = 0;
         let totalDuration = 0;
@@ -71,7 +95,7 @@ export function DashboardPage() {
         if (timeStr.length > 0) {
             let h = 0, m = 0;
             if (timeStr.length <= 2) {
-                m = parseInt(timeStr); // Solo minutos
+                m = parseInt(timeStr);
             } else {
                 m = parseInt(timeStr.slice(-2));
                 h = parseInt(timeStr.slice(0, -2));
@@ -92,7 +116,6 @@ export function DashboardPage() {
 
         if (totalMoney === 0) return;
 
-        // Distribución Proporcional
         const promises = Object.entries(earnings).map(([platformName, val]) => {
             const money = cleanCurrency(val);
             if (money > 0) {
@@ -113,9 +136,11 @@ export function DashboardPage() {
 
         await Promise.all(promises);
 
-        // Reset
+        // Reset y Feedback
         setEarnings(APPS.reduce((acc, app) => ({ ...acc, [app]: '' }), {}));
         setGlobalStats({ time: '', km: '' });
+        setShowToast(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     // Meta del día
@@ -142,7 +167,17 @@ export function DashboardPage() {
     const today = checkToday();
 
     return (
-        <div className="dashboard-page pb-32 fade-in max-w-lg mx-auto">
+        <div className="dashboard-page pb-40 fade-in max-w-lg mx-auto relative">
+            {/* TOAST DE ÉXITO */}
+            <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 transform ${showToast ? 'translate-y-0 opacity-100' : '-translate-y-10 opacity-0 pointer-events-none'}`}>
+                <div className="bg-emerald-500 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 font-bold">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" />
+                    </svg>
+                    <span>¡Día guardado con éxito!</span>
+                </div>
+            </div>
+
             {/* 1. ENCUESTA DE DISPONIBILIDAD (META) */}
             <div className={`card mb-4 transition-all duration-300 ${today.type === 'high' ? 'border-l-4 border-orange-500 bg-orange-50' : ''}`}>
                 <div className="flex justify-between items-end">
@@ -169,7 +204,7 @@ export function DashboardPage() {
             {/* 2. FORMULARIO PRINCIPAL */}
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
 
-                {/* GRUPO A: DATOS OPERATIVOS (Fecha, Tiempo, Km) */}
+                {/* GRUPO A: DATOS OPERATIVOS */}
                 <div className="card p-0 overflow-hidden shadow-sm border border-gray-100">
                     <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
                         <span className="font-bold text-gray-600 text-sm">📅 Fecha de Trabajo</span>
@@ -182,7 +217,7 @@ export function DashboardPage() {
                     </div>
 
                     <div className="grid grid-cols-2 divide-x divide-gray-100">
-                        {/* INPUT TIEMPO ORGÁNICO */}
+                        {/* INPUT TIEMPO */}
                         <div className="p-4 flex flex-col items-center">
                             <label className="text-xs font-bold text-gray-400 uppercase mb-1">Tiempo</label>
                             <div className="relative w-full">
@@ -193,6 +228,8 @@ export function DashboardPage() {
                                     className="text-center text-3xl font-black text-[var(--text-main)] w-full outline-none placeholder:text-gray-200 tracking-widest"
                                     value={globalStats.time}
                                     onChange={handleTimeChange}
+                                    onFocus={handleFocus}
+                                    onKeyDown={handleKeyDown}
                                     maxLength={4}
                                 />
                                 <div className="absolute top-full left-0 w-full text-center pointer-events-none">
@@ -214,6 +251,8 @@ export function DashboardPage() {
                                     className="text-center text-3xl font-black text-[var(--text-main)] w-24 outline-none placeholder:text-gray-200"
                                     value={globalStats.km}
                                     onChange={(e) => handleKmChange(e.target.value)}
+                                    onFocus={handleFocus}
+                                    onKeyDown={handleKeyDown}
                                 />
                                 <span className="text-sm font-bold text-gray-400">km</span>
                             </div>
@@ -234,12 +273,14 @@ export function DashboardPage() {
                                 <div className="relative">
                                     <span className={`absolute left-0 top-1/2 -translate-y-1/2 transition-all ${earnings[app] ? 'text-[var(--primary)] font-bold' : 'text-gray-300'}`}>$</span>
                                     <input
-                                        type="tel" // Fuerza numérico en iOS/Android
+                                        type="tel"
                                         inputMode="numeric"
                                         placeholder="0"
                                         className={`text-right w-32 p-2 bg-transparent outline-none font-mono text-lg font-bold transition-all ${earnings[app] ? 'text-[var(--text-main)]' : 'text-gray-400'}`}
                                         value={earnings[app]}
                                         onChange={(e) => handleEarningChange(app, e.target.value)}
+                                        onFocus={handleFocus}
+                                        onKeyDown={handleKeyDown}
                                     />
                                 </div>
                             </div>
@@ -252,13 +293,13 @@ export function DashboardPage() {
                     <button
                         type="submit"
                         disabled={totals.money === 0}
-                        className="w-full bg-emerald-500 text-white p-4 rounded-2xl shadow-xl shadow-emerald-200 flex justify-between items-center transition-all active:scale-95 disabled:opacity-70 disabled:active:scale-100 disabled:shadow-none"
+                        className="btn-primary flex justify-between items-center shadow-xl hover:shadow-2xl transition-all"
                     >
                         <div className="text-left">
-                            <p className="text-xs text-emerald-100 uppercase font-bold">Total Diario</p>
+                            <p className="text-xs text-white/80 uppercase font-bold">Total Diario</p>
                             <p className="text-2xl font-black text-white">${totals.money.toLocaleString()}</p>
                         </div>
-                        <div className="flex items-center gap-2 bg-white/20 px-5 py-3 rounded-xl backdrop-blur-sm">
+                        <div className="flex items-center gap-2 bg-white/20 px-5 py-3 rounded-xl backdrop-blur-sm shadow-inner">
                             <span className="font-bold tracking-wide">GUARDAR</span>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
