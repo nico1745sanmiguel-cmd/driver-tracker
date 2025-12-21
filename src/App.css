@@ -211,3 +211,146 @@ select {
 input:focus {
   border-color: var(--primary);
 }
+
+/* --- Planner Page Specifics --- */
+.planner-header-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 10px;
+  margin-bottom: 20px;
+}
+
+.planner-header-nav h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-transform: capitalize;
+}
+
+.nav-arrow {
+  background: transparent;
+  border: 1px solid #eee;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  font-weight: bold;
+}
+
+.nav-arrow:active {
+  background-color: #eee;
+}
+
+.budget-input {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-align: center;
+  border-color: var(--primary);
+}
+
+.day-selector {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.day-btn {
+  flex: 1;
+  height: 45px;
+  /* Larger touch target */
+  border: 1px solid #eee;
+  background: white;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+
+.day-btn:disabled {
+  opacity: 0.3;
+}
+
+.day-btn.active.off {
+  background-color: #e0e0e0;
+  color: #555;
+  border-color: #999;
+}
+
+.day-btn.active.high {
+  background-color: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  box-shadow: 0 4px 10px rgba(250, 0, 80, 0.4);
+}
+
+.vacation-section {
+  margin-top: 20px;
+  border-top: 1px dashed #eee;
+  padding-top: 15px;
+}
+
+.text-btn {
+  background: none;
+  color: var(--primary);
+  font-weight: 600;
+  padding: 0;
+  text-decoration: underline;
+  font-size: 0.9rem;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Adjust goals grid */
+.goals-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+.goal-item {
+  background: #f9f9f9;
+  padding: 15px;
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.goal-item.highlight {
+  background: #fff0f5;
+  border: 1px solid rgba(250, 0, 80, 0.1);
+}
+
+.goal-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.goal-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+}

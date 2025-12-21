@@ -18,6 +18,9 @@ export function useDriverData() {
     const startOfMonth = new Date(year, month, 1).toISOString().split('T')[0];
     const endOfMonth = new Date(year, month + 1, 0).toISOString().split('T')[0];
 
+    // Construct Config ID: "config_YYYY-MM"
+    const configId = `config_${year}-${String(month + 1).padStart(2, '0')}`;
+
     // 1. Escuchar Viajes (Solo del mes seleccionado) y Configuración
     useEffect(() => {
         // Query optimizada: Solo trae los del rango de fechas actual
@@ -32,12 +35,20 @@ export function useDriverData() {
             setShifts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
-        const unsubConfig = onSnapshot(doc(db, "configs", "default_config"), (snap) => {
-            if (snap.exists()) setMonthlyConfig(snap.data());
+        // Listen to Month specific config
+        const unsubConfig = onSnapshot(doc(db, "configs", configId), (snap) => {
+            if (snap.exists()) {
+                setMonthlyConfig(snap.data());
+            } else {
+                // Default config for new months
+                setMonthlyConfig({
+                    budget: 0, offDays: [], highDemandDays: [], vacationStart: '', vacationEnd: ''
+                });
+            }
         });
 
         return () => { unsubShifts(); unsubConfig(); };
-    }, [year, month]); // Se vuelve a ejecutar si cambia el mes/año seleccionado
+    }, [year, month, startOfMonth, endOfMonth, configId]); // Se vuelve a ejecutar si cambia el mes/año seleccionado
 
     // 2. Cálculos Inteligentes (Días, Pesos y Metas)
     const stats = useMemo(() => {
@@ -90,7 +101,7 @@ export function useDriverData() {
         actions: {
             addShift: (s) => addDoc(collection(db, "shifts"), { ...s, createdAt: new Date() }),
             deleteShift: (id) => deleteDoc(doc(db, "shifts", id)),
-            updateConfig: (c) => setDoc(doc(db, "configs", "default_config"), c),
+            updateConfig: (c) => setDoc(doc(db, "configs", configId), c), // Save to specific month config
             setMonth: (date) => setCurrentDate(date) // Permitir cambiar el mes visible
         }
     };
